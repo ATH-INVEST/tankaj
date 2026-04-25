@@ -1,5 +1,9 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const maxDuration = 300
 
 const GORIVA_URL = 'https://goriva.si/api/v1/search/'
 
@@ -36,7 +40,7 @@ async function fetchAllGorivaPages() {
     const res = await fetch(url, {
       headers: {
         accept: 'application/json',
-        'user-agent': 'Tankaj.si MVP importer',
+        'user-agent': 'Tankaj.si importer',
       },
       cache: 'no-store',
     })
@@ -46,7 +50,6 @@ async function fetchAllGorivaPages() {
     }
 
     const json = await res.json()
-
     all.push(...(json.results || []))
     url = json.next
   }
@@ -54,8 +57,23 @@ async function fetchAllGorivaPages() {
   return all
 }
 
-export async function GET() {
+function isAuthorized(req: NextRequest) {
+  const cronSecret = process.env.CRON_SECRET
+
+  if (process.env.NODE_ENV !== 'production') return true
+  if (!cronSecret) return false
+
+  return req.headers.get('authorization') === `Bearer ${cronSecret}`
+}
+
+export async function GET(req: NextRequest) {
+  if (!isAuthorized(req)) {
+    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+  }
+
   const startedAt = new Date().toISOString()
+
+  console.log('Tankaj.si INGEST RUN:', startedAt)
 
   const syncRun = await supabase
     .from('source_sync_runs')
@@ -74,11 +92,13 @@ export async function GET() {
     let pricesInserted = 0
 
     for (const station of stations) {
+      const brand = station.name.split(' ')[0] || null
+
       const locationPayload = {
         type: 'fuel_station',
         name: station.name,
-        brand: station.name.split(' ')[0] || null,
-        operator: station.name.split(' ')[0] || null,
+        brand,
+        operator: brand,
         address: station.address,
         city: null,
         country_code: 'SI',
@@ -104,9 +124,7 @@ export async function GET() {
         .select('id')
         .single()
 
-      if (locationError) {
-        throw locationError
-      }
+      if (locationError) throw locationError
 
       locationsUpserted++
 
@@ -129,9 +147,7 @@ export async function GET() {
             source_updated_at: new Date().toISOString(),
           })
 
-        if (priceError) {
-          throw priceError
-        }
+        if (priceError) throw priceError
 
         pricesInserted++
       }
@@ -152,15 +168,16 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       source: 'goriva.si',
+      startedAt,
+      finishedAt: new Date().toISOString(),
       stationsFound: stations.length,
       locationsUpserted,
       pricesInserted,
     })
   } catch (err) {
-    const message =
-  err instanceof Error
-    ? err.message
-    : JSON.stringify(err, null, 2)
+    const message = err instanceof Error ? err.message : JSON.stringify(err, null, 2)
+
+    console.error('Tankaj.si INGEST ERROR:', message)
 
     if (syncRun.data?.id) {
       await supabase
@@ -173,9 +190,6 @@ export async function GET() {
         .eq('id', syncRun.data.id)
     }
 
-    return NextResponse.json(
-  { success: false, error: message },
-  { status: 500 }
-)
+    return NextResponse.json({ success: false, error: message }, { status: 500 })
   }
 }

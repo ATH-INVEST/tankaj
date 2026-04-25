@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/ingest/slovenia",
+      "schedule": "0 * * * *"
+    }
+  ]
+}
