@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/ingest/slovenia",
-      "schedule": "0 * * * *"
+      "schedule": "0 3 * * *"
     }
   ]
 }
