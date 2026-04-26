@@ -36,11 +36,11 @@ type AnyResult = Result & {
 
 const SMART_NEARBY_MAX_DISTANCE_KM = 12
 const SMART_NEARBY_MAX_DRIVE_MINUTES = 18
-const ROUTED_CANDIDATES_NEARBY = 48
+const ROUTED_CANDIDATES_NEARBY = 56
 
 const MIN_ABSOLUTE_SAVING_TO_DRIVE_FURTHER = 1.25
-const REQUIRED_SAVING_PER_EXTRA_KM = 0.28
-const REQUIRED_SAVING_PER_EXTRA_MIN = 0.12
+const REQUIRED_SAVING_PER_EXTRA_KM = 0.32
+const REQUIRED_SAVING_PER_EXTRA_MIN = 0.14
 
 function normalizeBrand(value?: string | null) {
   return value ? value.trim().toUpperCase() : ''
@@ -155,22 +155,22 @@ function sortScored(rows: AnyResult[], sortBy: string) {
 function buildCandidatePool(rows: Result[], amount: number, sortBy: string) {
   const nearestCandidates = [...rows]
     .sort((a, b) => n(a.distance_km) - n(b.distance_km))
-    .slice(0, 36)
+    .slice(0, 42)
 
   const cheapestCandidates = [...rows]
     .sort((a, b) => {
       if (a.price !== b.price) return a.price - b.price
       return n(a.distance_km) - n(b.distance_km)
     })
-    .slice(0, 36)
+    .slice(0, 42)
 
   const basicSmartCandidates = [...rows]
     .sort((a, b) => {
-      const aBasic = n(a.price) * amount + n(a.distance_km) * 0.75
-      const bBasic = n(b.price) * amount + n(b.distance_km) * 0.75
+      const aBasic = n(a.price) * amount + n(a.distance_km) * 1.05
+      const bBasic = n(b.price) * amount + n(b.distance_km) * 1.05
       return aBasic - bBasic
     })
-    .slice(0, 48)
+    .slice(0, 56)
 
   if (sortBy === 'price') {
     return uniqueByLocation([...cheapestCandidates, ...nearestCandidates, ...basicSmartCandidates])
@@ -211,22 +211,22 @@ function reasonForMathematicalBest(
   requiredSaving: number
 ) {
   if (sortBy === 'price') {
-    return `Najnižja cena na liter v smiselni bližini. Dodatno pot upoštevamo v končnem strošku.`
+    return 'Najnižja cena na liter v smiselni bližini. Dodatno pot upoštevamo v končnem strošku.'
   }
 
   if (sortBy === 'total') {
-    return `Najnižji skupni strošek: gorivo + pot do črpalke + ocenjen čas.`
+    return 'Najnižji skupni strošek, razlika pa je dovolj velika glede na dodatno vožnjo.'
   }
 
   if (sortBy === 'distance') {
-    return `Najbližja smiselna možnost v izbranem radiusu.`
+    return 'Najbližja smiselna možnost v izbranem radiusu.'
   }
 
   if (savingIfFurther >= requiredSaving) {
     return `Dodatna pot je smiselna, ker prihrani približno ${round(savingIfFurther, 2).toFixed(2)} €.`
   }
 
-  return `Najboljše razmerje med ceno goriva, razdaljo, časom in stroškom poti.`
+  return 'Najboljše razmerje med ceno goriva, razdaljo, časom in stroškom poti.'
 }
 
 function chooseHumanBest(results: AnyResult[], sortBy: string) {
@@ -262,16 +262,10 @@ function chooseHumanBest(results: AnyResult[], sortBy: string) {
     n(nearest.effective_total_cost) - n(mathematicalBest.effective_total_cost)
   const requiredSaving = requiredSavingToRecommendFurther(mathematicalBest, nearest)
 
-  // Pri "Najnižja cena €/L" pokažemo najcenejšo samo, če ni nesmiselno daleč.
-  // Če je razlika premajhna za dodatno pot, priporočimo bližjo izbiro in razložimo zakaj.
-  if (sortBy === 'price' && savingIfFurther < requiredSaving && mathematicalBest.distance_km > nearest.distance_km + 2) {
-    return {
-      ...nearest,
-      recommendation_reason: `Najcenejša cena na liter prihrani premalo glede na dodatno vožnjo, zato priporočamo bližjo izbiro.`,
-    }
-  }
-
-  if (savingIfFurther >= requiredSaving || sortBy === 'total') {
+  // Ključni popravek:
+  // tudi pri "Najnižji skupni strošek" ne priporočamo dodatne vožnje,
+  // če je prihranek premajhen. Matematični vrstni red ostane v seznamu spodaj.
+  if (savingIfFurther >= requiredSaving) {
     return {
       ...mathematicalBest,
       recommendation_reason: reasonForMathematicalBest(
@@ -295,6 +289,7 @@ function chooseHumanBest(results: AnyResult[], sortBy: string) {
         : 'Najbližja možnost je tudi najbolj smiselna izbira.',
   }
 }
+
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
 
@@ -367,7 +362,7 @@ export async function GET(req: Request) {
 
     const conveniencePenalty =
       mode === 'nearby'
-        ? Math.max(0, distanceKm - 2) * 0.48 + Math.max(0, driveMinutes - 4) * 0.18
+        ? Math.max(0, distanceKm - 2) * 0.6 + Math.max(0, driveMinutes - 4) * 0.22
         : 0
 
     return {
@@ -417,27 +412,33 @@ export async function GET(req: Request) {
     if (sortBy === 'price') {
       return {
         ...item,
-        recommendation_reason: item.recommendation_reason || 'Nižja cena na liter; končni strošek je prikazan posebej.',
+        recommendation_reason:
+          item.recommendation_reason ||
+          'Nižja cena na liter; končni strošek je prikazan posebej.',
       }
     }
 
     if (sortBy === 'total') {
       return {
         ...item,
-        recommendation_reason: item.recommendation_reason || 'Razvrščeno po najnižjem skupnem strošku.',
+        recommendation_reason:
+          item.recommendation_reason ||
+          'Razvrščeno po najnižjem skupnem strošku.',
       }
     }
 
     if (sortBy === 'distance') {
       return {
         ...item,
-        recommendation_reason: item.recommendation_reason || 'Razvrščeno po najbližji črpalki.',
+        recommendation_reason:
+          item.recommendation_reason || 'Razvrščeno po najbližji črpalki.',
       }
     }
 
     return {
       ...item,
-      recommendation_reason: item.recommendation_reason || 'Dobra alternativa glede na ceno, pot in čas.',
+      recommendation_reason:
+        item.recommendation_reason || 'Dobra alternativa glede na ceno, pot in čas.',
     }
   })
 
