@@ -389,56 +389,82 @@ export default function Home() {
           </div>
         )}
 <section className="mt-16 border-t border-black/5 pt-10">
-  <div className="mx-auto max-w-3xl">
-    <h2 className="text-3xl font-semibold tracking-tight">
-      Kako deluje?
-    </h2>
+  <div className="mx-auto max-w-4xl">
+    <h2 className="text-3xl font-semibold tracking-tight">Kako deluje?</h2>
 
-    <p className="mt-4 text-lg text-[#607067]">
-      Tankaj.si ne išče samo najnižje cene goriva. Izračuna dejanski strošek
-      vsake črpalke glede na tvojo lokacijo.
+    <p className="mt-4 max-w-3xl text-lg leading-relaxed text-[#607067]">
+      Tankaj.si ne primerja samo cene na liter, ampak izračuna približen skupni
+      strošek tankanja. Pri izračunu upoštevamo ceno goriva, količino, ocenjeno
+      realno vožnjo do črpalke in nazaj, povprečno porabo vozila 7 L/100 km ter
+      ocenjeno vrednost časa 6 €/h.
     </p>
 
-    <div className="mt-6 space-y-4 text-[#607067]">
-      <p>
-        Upoštevamo:
-      </p>
+    <div className="mt-8 grid gap-4 lg:grid-cols-[1fr_1.1fr]">
+      <div className="rounded-[28px] bg-white p-6 shadow-sm ring-1 ring-black/5">
+        <div className="text-sm font-medium text-[#607067]">Formula</div>
 
-      <ul className="list-disc pl-5 space-y-2">
-        <li>ceno goriva</li>
-        <li>realno razdaljo in čas vožnje</li>
-        <li>strošek goriva za pot (tja in nazaj)</li>
-        <li>tvoj čas (ocenjen v € na uro)</li>
-        <li>tvoje preference (npr. znamka)</li>
-      </ul>
+        <div className="mt-4 text-2xl font-semibold tracking-tight text-[#10251b]">
+          skupni strošek =
+        </div>
+
+        <div className="mt-4 space-y-3 text-[#607067]">
+          <div className="flex items-center justify-between rounded-2xl bg-[#f5f7f4] px-4 py-3">
+            <span>gorivo</span>
+            <strong className="text-[#10251b]">cena × količina</strong>
+          </div>
+
+          <div className="flex items-center justify-between rounded-2xl bg-[#f5f7f4] px-4 py-3">
+            <span>pot</span>
+            <strong className="text-[#10251b]">vožnja tja in nazaj</strong>
+          </div>
+
+          <div className="flex items-center justify-between rounded-2xl bg-[#f5f7f4] px-4 py-3">
+            <span>čas</span>
+            <strong className="text-[#10251b]">približno 6 €/h</strong>
+          </div>
+        </div>
+
+        <p className="mt-5 text-sm leading-relaxed text-[#607067]">
+          Če imaš drugačno porabo ali drugače vrednotiš svoj čas, je rezultat še
+          vedno dobra orientacija — glavni namen je preprečiti odločitev samo po
+          najnižji ceni na liter.
+        </p>
+      </div>
+
+      <div className="rounded-[28px] bg-[#10251b] p-6 text-white shadow-sm">
+        <div className="text-sm text-white/55">Primer</div>
+
+        <div className="mt-4 space-y-3">
+          <div className="rounded-2xl bg-white/10 p-4">
+            <div className="text-sm text-white/55">Cena goriva</div>
+            <div className="mt-1 text-2xl font-semibold">80.00 €</div>
+          </div>
+
+          <div className="rounded-2xl bg-white/10 p-4">
+            <div className="text-sm text-white/55">Pot do črpalke in nazaj</div>
+            <div className="mt-1 text-2xl font-semibold">+ 4.00 €</div>
+          </div>
+
+          <div className="rounded-2xl bg-[#b9fb6a] p-4 text-[#10251b]">
+            <div className="text-sm opacity-70">Približen skupni strošek</div>
+            <div className="mt-1 text-3xl font-semibold">84.00 €</div>
+          </div>
+        </div>
+
+        <p className="mt-5 text-sm leading-relaxed text-white/60">
+          Zato črpalka z nižjo ceno na liter ni vedno najboljša izbira. Če je
+          predaleč, lahko dodatna pot hitro izbriše celoten prihranek.
+        </p>
+      </div>
     </div>
 
-    <div className="mt-8 rounded-2xl bg-[#f5f7f4] p-6 ring-1 ring-black/5">
-      <div className="text-sm text-[#607067] mb-2">
-        Poenostavljen izračun:
-      </div>
-
-      <div className="text-xl font-semibold tracking-tight">
-        skupni strošek =
-      </div>
-
-      <div className="mt-2 text-[#10251b] font-medium">
-        (cena goriva × količina)
-        <br />
-        + strošek poti
-        <br />
-        + vrednost časa
-      </div>
-
-      <div className="mt-4 text-sm text-[#607067]">
-        Strošek poti vključuje gorivo za vožnjo do črpalke in nazaj.
-        Čas vožnje pretvorimo v € (npr. 6 €/h), da dobimo realno odločitev.
+    <div className="mt-6 rounded-[24px] bg-[#dff7e8] p-5 text-[#0d6b43]">
+      <div className="font-semibold">Tankaj.si optimizira odločitev, ne samo cene.</div>
+      <div className="mt-1 text-sm">
+        Najboljša izbira je tista, kjer je skupni strošek najnižji — ne nujno
+        tista, kjer je liter goriva najcenejši.
       </div>
     </div>
-
-    <p className="mt-6 text-sm text-[#607067]">
-      Zato najcenejša cena na liter pogosto ni najboljša izbira.
-    </p>
   </div>
 </section>
       </section>
