@@ -388,6 +388,59 @@ export default function Home() {
             ))}
           </div>
         )}
+<section className="mt-16 border-t border-black/5 pt-10">
+  <div className="mx-auto max-w-3xl">
+    <h2 className="text-3xl font-semibold tracking-tight">
+      Kako deluje?
+    </h2>
+
+    <p className="mt-4 text-lg text-[#607067]">
+      Tankaj.si ne išče samo najnižje cene goriva. Izračuna dejanski strošek
+      vsake črpalke glede na tvojo lokacijo.
+    </p>
+
+    <div className="mt-6 space-y-4 text-[#607067]">
+      <p>
+        Upoštevamo:
+      </p>
+
+      <ul className="list-disc pl-5 space-y-2">
+        <li>ceno goriva</li>
+        <li>realno razdaljo in čas vožnje</li>
+        <li>strošek goriva za pot (tja in nazaj)</li>
+        <li>tvoj čas (ocenjen v € na uro)</li>
+        <li>tvoje preference (npr. znamka)</li>
+      </ul>
+    </div>
+
+    <div className="mt-8 rounded-2xl bg-[#f5f7f4] p-6 ring-1 ring-black/5">
+      <div className="text-sm text-[#607067] mb-2">
+        Poenostavljen izračun:
+      </div>
+
+      <div className="text-xl font-semibold tracking-tight">
+        skupni strošek =
+      </div>
+
+      <div className="mt-2 text-[#10251b] font-medium">
+        (cena goriva × količina)
+        <br />
+        + strošek poti
+        <br />
+        + vrednost časa
+      </div>
+
+      <div className="mt-4 text-sm text-[#607067]">
+        Strošek poti vključuje gorivo za vožnjo do črpalke in nazaj.
+        Čas vožnje pretvorimo v € (npr. 6 €/h), da dobimo realno odločitev.
+      </div>
+    </div>
+
+    <p className="mt-6 text-sm text-[#607067]">
+      Zato najcenejša cena na liter pogosto ni najboljša izbira.
+    </p>
+  </div>
+</section>
       </section>
     </main>
   )
