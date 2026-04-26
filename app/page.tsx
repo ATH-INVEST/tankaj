@@ -24,6 +24,8 @@ type Result = {
   is_cross_border?: boolean
   route_source?: string
   captured_at?: string
+  recommendation_reason?: string | null
+  smart_warning?: string | null
 }
 
 type Summary = {
@@ -289,7 +291,7 @@ function HeroSearch({
       </div>
 
       <h1 className="mt-6 max-w-xl text-[48px] font-black leading-[.93] tracking-[-.055em] sm:text-[64px] lg:text-[72px] xl:text-[78px]">
-        Ne tankaj na pamet.
+        Ne tankaj več na pamet.
       </h1>
 
       <p className="mt-5 max-w-lg text-base leading-relaxed text-white/60 sm:text-lg">
@@ -438,6 +440,12 @@ function BestCard({ item, summary, mapsUrl, shareResult, shareCopied }: any) {
             {item.address}
             {item.city ? `, ${item.city}` : ''}
           </div>
+
+          {item.recommendation_reason && (
+            <div className="mt-3 inline-flex max-w-xl rounded-2xl border border-[#b9fb6a]/20 bg-[#b9fb6a]/12 px-4 py-2 text-sm font-semibold leading-relaxed text-[#b9fb6a]">
+              {item.recommendation_reason}
+            </div>
+          )}
         </div>
 
         <div className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-white/65">
@@ -523,6 +531,11 @@ function CompactResult({ item, label, mapsUrl }: { item: Result; label?: string;
           <div className="min-w-0">
             <div className="truncate text-sm font-black text-white">{item.name}</div>
             <div className="mt-0.5 truncate text-[11px] text-white/40">{label || item.address}</div>
+            {item.smart_warning && (
+              <div className="mt-1 truncate text-[11px] font-semibold text-[#b9fb6a]/75">
+                {item.smart_warning}
+              </div>
+            )}
             <div className="mt-1 text-lg font-black text-[#b9fb6a]">{item.price.toFixed(3)} €/L</div>
           </div>
         </div>

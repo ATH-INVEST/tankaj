@@ -203,6 +203,32 @@ function requiredSavingToRecommendFurther(candidate: AnyResult, nearest: AnyResu
   )
 }
 
+function reasonForMathematicalBest(
+  candidate: AnyResult,
+  nearest: AnyResult,
+  sortBy: string,
+  savingIfFurther: number,
+  requiredSaving: number
+) {
+  if (sortBy === 'price') {
+    return `Najnižja cena na liter v smiselni bližini. Dodatno pot upoštevamo v končnem strošku.`
+  }
+
+  if (sortBy === 'total') {
+    return `Najnižji skupni strošek: gorivo + pot do črpalke + ocenjen čas.`
+  }
+
+  if (sortBy === 'distance') {
+    return `Najbližja smiselna možnost v izbranem radiusu.`
+  }
+
+  if (savingIfFurther >= requiredSaving) {
+    return `Dodatna pot je smiselna, ker prihrani približno ${round(savingIfFurther, 2).toFixed(2)} €.`
+  }
+
+  return `Najboljše razmerje med ceno goriva, razdaljo, časom in stroškom poti.`
+}
+
 function chooseHumanBest(results: AnyResult[], sortBy: string) {
   if (!results.length) return null
 
@@ -214,14 +240,21 @@ function chooseHumanBest(results: AnyResult[], sortBy: string) {
   if (nearest.location_id === mathematicalBest.location_id) {
     return {
       ...mathematicalBest,
-      recommendation_reason: 'Najbolj smiselna izbira v tvoji bližini.',
+      recommendation_reason:
+        sortBy === 'price'
+          ? 'Najnižja cena na liter med najbližjimi smiselnimi možnostmi.'
+          : sortBy === 'total'
+            ? 'Najnižji skupni strošek v tvoji bližini.'
+            : sortBy === 'distance'
+              ? 'Najbližja črpalka v izbranem radiusu.'
+              : 'Najbolj smiselna izbira v tvoji bližini.',
     }
   }
 
   if (sortBy === 'distance') {
     return {
       ...nearest,
-      recommendation_reason: 'Najbližja smiselna možnost.',
+      recommendation_reason: 'Najbližja smiselna možnost v izbranem radiusu.',
     }
   }
 
@@ -229,13 +262,25 @@ function chooseHumanBest(results: AnyResult[], sortBy: string) {
     n(nearest.effective_total_cost) - n(mathematicalBest.effective_total_cost)
   const requiredSaving = requiredSavingToRecommendFurther(mathematicalBest, nearest)
 
-  if (savingIfFurther >= requiredSaving) {
+  // Pri "Najnižja cena €/L" pokažemo najcenejšo samo, če ni nesmiselno daleč.
+  // Če je razlika premajhna za dodatno pot, priporočimo bližjo izbiro in razložimo zakaj.
+  if (sortBy === 'price' && savingIfFurther < requiredSaving && mathematicalBest.distance_km > nearest.distance_km + 2) {
+    return {
+      ...nearest,
+      recommendation_reason: `Najcenejša cena na liter prihrani premalo glede na dodatno vožnjo, zato priporočamo bližjo izbiro.`,
+    }
+  }
+
+  if (savingIfFurther >= requiredSaving || sortBy === 'total') {
     return {
       ...mathematicalBest,
-      recommendation_reason: `Dodatna pot je smiselna, ker prihrani približno ${round(
+      recommendation_reason: reasonForMathematicalBest(
+        mathematicalBest,
+        nearest,
+        sortBy,
         savingIfFurther,
-        2
-      ).toFixed(2)} €.`,
+        requiredSaving
+      ),
     }
   }
 
@@ -250,7 +295,6 @@ function chooseHumanBest(results: AnyResult[], sortBy: string) {
         : 'Najbližja možnost je tudi najbolj smiselna izbira.',
   }
 }
-
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
 
@@ -365,7 +409,37 @@ export async function GET(req: Request) {
     sortBy
   )
 
-  const results = humanBest ? [humanBest, ...sortedForList] : sortedForList
+  const resultsRaw = humanBest ? [humanBest, ...sortedForList] : sortedForList
+
+  const results = resultsRaw.map((item, index) => {
+    if (index === 0 && item.recommendation_reason) return item
+
+    if (sortBy === 'price') {
+      return {
+        ...item,
+        recommendation_reason: item.recommendation_reason || 'Nižja cena na liter; končni strošek je prikazan posebej.',
+      }
+    }
+
+    if (sortBy === 'total') {
+      return {
+        ...item,
+        recommendation_reason: item.recommendation_reason || 'Razvrščeno po najnižjem skupnem strošku.',
+      }
+    }
+
+    if (sortBy === 'distance') {
+      return {
+        ...item,
+        recommendation_reason: item.recommendation_reason || 'Razvrščeno po najbližji črpalki.',
+      }
+    }
+
+    return {
+      ...item,
+      recommendation_reason: item.recommendation_reason || 'Dobra alternativa glede na ceno, pot in čas.',
+    }
+  })
 
   const bestOverall = results[0] || null
   const nearest = [...fallbackNearby].sort((a, b) => a.distance_km - b.distance_km)[0] || null
