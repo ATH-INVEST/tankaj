@@ -202,8 +202,8 @@ export default function Home() {
     <main className="min-h-screen overflow-x-hidden bg-[#06140f] text-white">
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(185,251,106,.23),transparent_28%),radial-gradient(circle_at_92%_12%,rgba(44,120,76,.24),transparent_34%),linear-gradient(180deg,#071a12_0%,#04100b_100%)]" />
 
-      <section className="relative mx-auto flex min-h-screen max-w-6xl flex-col px-4 py-4 sm:px-6 lg:px-8 lg:py-7">
-        <div className="grid flex-1 gap-4 lg:grid-cols-[.9fr_1.1fr] xl:gap-5">
+      <section className="relative mx-auto flex min-h-screen max-w-[1320px] flex-col px-4 py-4 sm:px-6 lg:px-8 lg:py-7">
+        <div className="grid flex-1 gap-4 lg:grid-cols-2 xl:gap-6">
           <HeroSearch
             fuelType={fuelType}
             setFuelType={setFuelType}
@@ -275,7 +275,7 @@ function HeroSearch({
   search,
 }: any) {
   return (
-    <div className="rounded-[30px] border border-white/10 bg-white/[0.055] p-4 shadow-[0_25px_80px_rgba(0,0,0,.25)] backdrop-blur-2xl sm:p-6 lg:min-h-[680px] lg:p-7">
+    <div className="rounded-[30px] border border-white/10 bg-white/[0.055] p-4 shadow-[0_25px_80px_rgba(0,0,0,.25)] backdrop-blur-2xl sm:p-6 lg:min-h-[720px] lg:p-8">
       <div className="flex items-center justify-between gap-4">
         <div className="text-3xl font-black italic tracking-tight sm:text-4xl">
           Tankaj<span className="text-[#b9fb6a]">.si</span>
@@ -290,7 +290,7 @@ function HeroSearch({
         <span>Slovenija + Hrvaška</span>
       </div>
 
-      <h1 className="mt-6 max-w-xl text-[48px] font-black leading-[.93] tracking-[-.055em] sm:text-[64px] lg:text-[66px] xl:text-[72px]">
+      <h1 className="mt-6 max-w-xl text-[48px] font-black leading-[.93] tracking-[-.055em] sm:text-[64px] lg:text-[72px] xl:text-[78px]">
         Ne tankaj več na pamet.
       </h1>
 
@@ -298,7 +298,7 @@ function HeroSearch({
         Tankaj.si izračuna najboljšo izbiro glede na ceno goriva, razdaljo, strošek poti, čas in tvoje preference.
       </p>
 
-      <div className="mt-6 rounded-[26px] border border-white/10 bg-[#123024]/72 p-3 sm:p-4">
+      <div className="mt-6 rounded-[26px] border border-white/10 bg-[#123024]/72 p-3 sm:p-4 lg:p-5">
         <div className="grid gap-3 sm:grid-cols-2">
           <SelectDark label="Gorivo" value={fuelType} onChange={setFuelType} options={[['PETROL_95', 'Bencin 95'], ['DIESEL', 'Dizel']]} />
           <SelectDark label="Radius" value={String(radius)} onChange={(v) => setRadius(Number(v))} options={[['5', '5 km'], ['10', '10 km'], ['25', '25 km'], ['50', '50 km'], ['100', '100 km'], ['200', '200 km']]} />
@@ -326,9 +326,9 @@ function HeroSearch({
           <button
             type="button"
             onClick={() => setShowAdvanced((v: boolean) => !v)}
-            className="h-12 rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-left text-sm font-semibold text-white/75 transition hover:bg-white/[0.08]"
+            className="h-12 rounded-2xl border border-white/10 bg-white/[0.055] px-4 text-left text-sm font-bold text-white/78 transition hover:bg-white/[0.09]"
           >
-            {showAdvanced ? 'Skrij nastavitve' : 'Napredne nastavitve'}
+            {showAdvanced ? 'Osnovni prikaz' : 'Napredne nastavitve'}
           </button>
 
           <button
@@ -369,7 +369,7 @@ function ResultPanel({
   shareCopied,
 }: any) {
   return (
-    <div className="rounded-[30px] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(185,251,106,.18),transparent_32%),linear-gradient(180deg,rgba(15,48,34,.86),rgba(5,20,14,.88))] p-4 shadow-[0_25px_80px_rgba(0,0,0,.25)] backdrop-blur-2xl sm:p-6 lg:min-h-[680px] lg:p-7">
+    <div className="rounded-[30px] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(185,251,106,.18),transparent_32%),linear-gradient(180deg,rgba(15,48,34,.86),rgba(5,20,14,.88))] p-4 shadow-[0_25px_80px_rgba(0,0,0,.25)] backdrop-blur-2xl sm:p-6 lg:min-h-[720px] lg:p-8">
       {loading && <LoadingState status={status} />}
 
       {searched && !loading && status === 'done' && !best && (
@@ -391,7 +391,7 @@ function ResultPanel({
             {lastUpdated && <div className="text-xs text-white/40">Cene {lastUpdated}</div>}
           </div>
 
-          <div className="mt-3 space-y-2.5">
+          <div className="mt-3 space-y-2.5 lg:space-y-3">
             {preferredPick && preferredPick.location_id !== best.location_id && (
               <CompactResult item={preferredPick} label="Preferirana znamka" mapsUrl={mapsUrl} />
             )}
@@ -470,9 +470,9 @@ function BestCard({ item, summary, mapsUrl, shareResult, shareCopied }: any) {
           <CostPill label="Čas" value={formatMoney(item.time_cost)} />
         </div>
 
-        <div className="mt-3 rounded-2xl bg-[#b9fb6a] p-4 text-[#071a12]">
-          <div className="text-xs font-black uppercase tracking-[.2em] opacity-70">Končni strošek</div>
-          <div className="mt-1 text-3xl font-black">{formatMoney(item.effective_total_cost)}</div>
+        <div className="mt-3 rounded-2xl border border-[#b9fb6a]/70 bg-[#b9fb6a]/12 p-4 text-white shadow-[0_0_0_1px_rgba(185,251,106,.08),0_18px_46px_rgba(185,251,106,.10)]">
+          <div className="text-xs font-black uppercase tracking-[.2em] text-[#b9fb6a]/85">Končni strošek</div>
+          <div className="mt-1 text-3xl font-black text-[#b9fb6a]">{formatMoney(item.effective_total_cost)}</div>
         </div>
       </div>
 
