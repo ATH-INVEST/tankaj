@@ -27,7 +27,6 @@ function normalizeBrand(value?: string | null) {
 }
 
 function inferUserCountry(lat: number, lng: number) {
-  // SI mora biti pred HR, ker se geografsko prekrivata po grobih mejah.
   if (lat >= 45 && lat <= 47 && lng >= 13 && lng <= 17) return 'SI'
   if (lat >= 42 && lat <= 47 && lng >= 13 && lng <= 20) return 'HR'
   return null
@@ -42,11 +41,7 @@ function round(value: number, decimals = 2) {
   return Number(value.toFixed(decimals))
 }
 
-async function enrichWithRealRoutes(
-  rows: Result[],
-  user: { lat: number; lng: number },
-  maxRoutes = 15
-) {
+async function enrichWithRealRoutes(rows: Result[], user: { lat: number; lng: number }, maxRoutes = 15) {
   const candidates = rows.slice(0, maxRoutes)
 
   const enriched = await Promise.all(
@@ -101,12 +96,13 @@ export async function GET(req: Request) {
 
   const brandFilter = normalizeBrand(searchParams.get('brand') || searchParams.get('brandFilter'))
   const preferredBrand = normalizeBrand(searchParams.get('preferredBrand'))
+  const tripMode = searchParams.get('tripMode') === 'oneway' ? 'oneway' : 'return'
+  const sortBy = searchParams.get('sortBy') || 'smart'
+
+  const tripMultiplier = tripMode === 'oneway' ? 1 : 2
 
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    return NextResponse.json(
-      { success: false, error: 'Missing or invalid lat/lng' },
-      { status: 400 }
-    )
+    return NextResponse.json({ success: false, error: 'Missing or invalid lat/lng' }, { status: 400 })
   }
 
   const { data, error } = await supabase.rpc('search_fuel_locations', {
@@ -120,9 +116,7 @@ export async function GET(req: Request) {
     time_value_eur_per_hour: timeValue,
   })
 
-  if (error) {
-    return NextResponse.json({ success: false, error }, { status: 500 })
-  }
+  if (error) return NextResponse.json({ success: false, error }, { status: 500 })
 
   const userCountry = inferUserCountry(lat, lng)
 
@@ -134,29 +128,23 @@ export async function GET(req: Request) {
     rows = rows.filter((r) => normalizeBrand(r.brand) === brandFilter)
   }
 
-  // Najprej izberemo dovolj kandidatov po zračni razdalji + ceni,
-  // nato za top kandidate izračunamo realno cestno vožnjo.
   const preSorted = [...rows]
     .sort((a, b) => {
       const aBasic = n(a.price) * amount + n(a.distance_km) * 0.2
       const bBasic = n(b.price) * amount + n(b.distance_km) * 0.2
       return aBasic - bBasic
     })
-    .slice(0, 40)
+    .slice(0, 45)
 
-  const routedRows = await enrichWithRealRoutes(preSorted, { lat, lng }, 15)
+  const routedRows = await enrichWithRealRoutes(preSorted, { lat, lng }, 18)
 
   const scored = routedRows.map((r: any) => {
     const distanceKm = n(r.distance_km)
     const driveMinutes = n(r.estimated_drive_minutes, Math.max(1, Math.round((distanceKm / 55) * 60)))
     const fuelCost = round(n(r.fuel_cost ?? r.total_cost, r.price * amount), 2)
 
-    // Realističen MVP model:
-    // - gorivo za dodatno pot šteje v obe smeri
-    // - čas šteje v obe smeri
-    // Tako ne bo priporočal 30 km vožnje za 0.50 € razlike.
-    const travelFuelCost = round(((distanceKm * 2) * consumption / 100) * n(r.price), 2)
-    const timeCost = round(((driveMinutes * 2) / 60) * timeValue, 2)
+    const travelFuelCost = round(((distanceKm * tripMultiplier) * consumption / 100) * n(r.price), 2)
+    const timeCost = round(((driveMinutes * tripMultiplier) / 60) * timeValue, 2)
     const effectiveTotalCost = round(fuelCost + travelFuelCost + timeCost, 2)
 
     const isPreferred = preferredBrand && normalizeBrand(r.brand) === preferredBrand
@@ -173,36 +161,39 @@ export async function GET(req: Request) {
       tankaj_score: round(effectiveTotalCost - preferenceBonus, 2),
       is_preferred_brand: Boolean(isPreferred),
       is_cross_border: userCountry ? Boolean(r.country_code && r.country_code !== userCountry) : false,
+      trip_mode: tripMode,
     }
   })
 
   const results = [...scored].sort((a: any, b: any) => {
+    if (sortBy === 'price') {
+      if (a.price !== b.price) return a.price - b.price
+      return a.distance_km - b.distance_km
+    }
+
+    if (sortBy === 'distance') return a.distance_km - b.distance_km
+
+    if (sortBy === 'total') {
+      if (a.effective_total_cost !== b.effective_total_cost) {
+        return a.effective_total_cost - b.effective_total_cost
+      }
+      return a.distance_km - b.distance_km
+    }
+
     if (a.tankaj_score !== b.tankaj_score) return a.tankaj_score - b.tankaj_score
     if (a.price !== b.price) return a.price - b.price
     return a.distance_km - b.distance_km
   })
 
   const bestOverall = results[0] || null
-  const nearest = [...results].sort((a, b) => a.distance_km - b.distance_km)[0] || null
-
-  const cheapestFuel =
-    [...results].sort((a, b) => {
-      if (a.price !== b.price) return a.price - b.price
-      return a.distance_km - b.distance_km
-    })[0] || null
-
-  const bestCrossBorder =
-    results.find((r: any) => r.is_cross_border) ||
-    results.find((r) => r.country_code === 'HR') ||
-    null
-
-  const preferredBest = preferredBrand
-    ? results.find((r: any) => normalizeBrand(r.brand) === preferredBrand) || null
-    : null
+  const nearest = [...scored].sort((a, b) => a.distance_km - b.distance_km)[0] || null
+  const cheapestFuel = [...scored].sort((a, b) => (a.price !== b.price ? a.price - b.price : a.distance_km - b.distance_km))[0] || null
+  const bestCrossBorder = results.find((r: any) => r.is_cross_border) || null
+  const preferredBest = preferredBrand ? results.find((r: any) => normalizeBrand(r.brand) === preferredBrand) || null : null
 
   return NextResponse.json({
     success: true,
-    ranking: 'smart_tankaj_score_real_routes',
+    ranking: sortBy,
     user: { lat, lng, inferred_country: userCountry },
     params: {
       fuel_type: type,
@@ -212,7 +203,9 @@ export async function GET(req: Request) {
       time_value_eur_per_hour: timeValue,
       brand_filter: brandFilter || 'ALL',
       preferred_brand: preferredBrand || null,
-      routed_candidates: 15,
+      trip_mode: tripMode,
+      sort_by: sortBy,
+      routed_candidates: 18,
     },
     summary: {
       best_overall: bestOverall,
@@ -226,11 +219,7 @@ export async function GET(req: Request) {
           : 0,
       saving_vs_cheapest_fuel:
         bestOverall && cheapestFuel
-          ? round(
-              Number(cheapestFuel.effective_total_cost) -
-                Number(bestOverall.effective_total_cost),
-              2
-            )
+          ? round(Number(cheapestFuel.effective_total_cost) - Number(bestOverall.effective_total_cost), 2)
           : 0,
     },
     results,
