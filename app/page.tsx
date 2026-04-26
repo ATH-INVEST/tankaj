@@ -150,8 +150,13 @@ export default function Home() {
   const [searched, setSearched] = useState(false)
   const [shareCopied, setShareCopied] = useState(false)
 
-  const activeRequestId = useRef(0)
-  const didAutoLocate = useRef(false)
+ const activeRequestId = useRef(0)
+ const abortRef = useRef<AbortController | null>(null)
+ const didAutoLocate = useRef(false)
+
+  const [nextOffset, setNextOffset] = useState(6)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
 
   const loading = status === 'location' || status === 'routing'
 
@@ -190,72 +195,130 @@ export default function Home() {
     return `pred ${Math.round(diffMin / 60)} h`
   }, [best])
 
+async function loadMoreResults() {
+  if (!coords || loadingMore || !hasMore) return
+
+  setLoadingMore(true)
+
+  try {
+    const params = new URLSearchParams({
+      lat: String(coords.lat),
+      lng: String(coords.lng),
+      type: fuelType,
+      radius: String(radius),
+      amount: String(amount),
+      brand,
+      mode: appMode,
+      sortBy,
+      batch: 'more',
+      offset: String(nextOffset),
+    })
+
+    const res = await fetch(`/api/search?${params.toString()}`)
+
+    if (!res.ok) {
+      throw new Error('Failed to load more results')
+    }
+
+    const json = await res.json()
+
+    setResults((prev) => {
+      const map = new Map<string, Result>()
+      for (const item of prev) map.set(item.location_id, item)
+      for (const item of json.results || []) map.set(item.location_id, item)
+      return Array.from(map.values())
+    })
+
+    setNextOffset((current) => json.next_offset || current + 5)
+    setHasMore(Boolean(json.has_more))
+    setShowOthers(true)
+  } catch {
+    setHasMore(false)
+  } finally {
+    setLoadingMore(false)
+  }
+}
+
   const runSearch = useCallback(
-    async (point: { lat: number; lng: number }) => {
-      if (appMode === 'route') return
+  async (point: { lat: number; lng: number }) => {
+    if (appMode === 'route') return
 
-      const requestId = ++activeRequestId.current
-      setSearched(true)
-      setShowOthers(false)
-      setStatus('routing')
+    const requestId = ++activeRequestId.current
 
-      try {
-        const params = new URLSearchParams({
-          lat: String(point.lat),
-          lng: String(point.lng),
-          type: fuelType,
-          radius: String(radius),
-          amount: String(amount),
-          brand,
-          mode: appMode,
-        })
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
 
-        const res = await fetch(`/api/search?${params.toString()}`)
-        const json = await res.json()
+    setSearched(true)
+    setShowOthers(false)
+    setStatus('routing')
 
-        if (requestId !== activeRequestId.current) return
+    try {
+      const params = new URLSearchParams({
+        lat: String(point.lat),
+        lng: String(point.lng),
+        type: fuelType,
+        radius: String(radius),
+        amount: String(amount),
+        brand,
+        mode: appMode,
+        batch: 'initial',
+      })
 
-        setResults(json.results || [])
-        setStatus('done')
-      } catch {
-        if (requestId !== activeRequestId.current) return
-        setStatus('error')
-      }
-    },
-    [fuelType, radius, amount, brand, appMode]
-  )
+      const res = await fetch(`/api/search?${params.toString()}`, {
+        signal: controller.signal,
+      })
+
+      if (!res.ok) {
+  throw new Error('Search failed')
+}
+
+const json = await res.json()
+
+      if (requestId !== activeRequestId.current) return
+
+      setResults(json.results || [])
+      setNextOffset(json.next_offset || 6)
+      setHasMore(Boolean(json.has_more))
+      setStatus('done')
+    } catch (err: any) {
+      if (err?.name === 'AbortError') return
+      if (requestId !== activeRequestId.current) return
+      setStatus('error')
+    }
+  },
+  [fuelType, radius, amount, brand, appMode]
+)
 
   const requestLocationAndSearch = useCallback(() => {
-    if (appMode === 'route') {
-      alert('Način “Na poti” dodamo v naslednjem koraku. Za zdaj uporabi “Okoli mene”.')
-      return
-    }
+  if (appMode === 'route') {
+    alert('Način “Na poti” dodamo v naslednjem koraku. Za zdaj uporabi “Okoli mene”.')
+    return
+  }
 
-    if (!navigator.geolocation) {
-      alert('Tvoj brskalnik ne podpira zaznave lokacije.')
+  if (!navigator.geolocation) {
+    alert('Tvoj brskalnik ne podpira zaznave lokacije.')
+    setStatus('error')
+    return
+  }
+
+  setSearched(true)
+  setStatus('location')
+
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      setCoords({
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+      })
+    },
+    () => {
+      alert('Lokacije ni bilo mogoče pridobiti. Dovoli dostop do lokacije in poskusi znova.')
       setStatus('error')
-      return
-    }
-
-    setStatus('location')
-
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const point = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-        }
-
-        setCoords(point)
-        await runSearch(point)
-      },
-      () => {
-        alert('Lokacije ni bilo mogoče pridobiti. Dovoli dostop do lokacije in poskusi znova.')
-        setStatus('error')
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
-    )
-  }, [appMode, runSearch])
+    },
+    { enableHighAccuracy: false, timeout: 7000, maximumAge: 300000 }
+  )
+}, [appMode])
 
   useEffect(() => {
     if (didAutoLocate.current) return
@@ -348,6 +411,9 @@ export default function Home() {
             includeFuel={includeFuel}
             includePath={includePath}
             includeTime={includeTime}
+hasMore={hasMore}
+loadingMore={loadingMore}
+loadMoreResults={loadMoreResults}
           />
         </div>
 
@@ -421,7 +487,7 @@ function HeroSearch({
             <span className="mb-1.5 block text-xs font-semibold text-white/50">Količina</span>
             <input
               value={amount}
-              onChange={(e) => setAmount(Number(e.target.value))}
+              onChange={(e) => setAmount(Math.max(1, Number(e.target.value) || 1))}
               type="number"
               min={1}
               className="h-12 w-full rounded-2xl border border-white/10 bg-[#071a12] px-4 text-[15px] font-semibold text-white outline-none transition focus:border-[#b9fb6a]/70"
@@ -477,6 +543,9 @@ function ResultPanel({
   includeFuel,
   includePath,
   includeTime,
+  hasMore,
+  loadingMore,
+  loadMoreResults,
 }: any) {
   return (
     <div className="rounded-[30px] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(185,251,106,.18),transparent_32%),linear-gradient(180deg,rgba(15,48,34,.86),rgba(5,20,14,.88))] p-4 shadow-[0_25px_80px_rgba(0,0,0,.25)] backdrop-blur-2xl sm:p-6 lg:min-h-[720px] lg:p-8">
@@ -527,21 +596,14 @@ function ResultPanel({
             includeTime={includeTime}
           />
 
-          {otherResults.length > 0 && (
+          {(otherResults.length > 0 || hasMore) && (
             <>
               <div className="mt-4 flex items-center justify-between gap-3">
                 <h2 className="text-xl font-black tracking-tight">Druge odlične možnosti</h2>
                 {lastUpdated && <div className="text-xs text-white/40">Cene {lastUpdated}</div>}
               </div>
 
-              {!showOthers ? (
-                <button
-                  onClick={() => setShowOthers(true)}
-                  className="mt-3 w-full rounded-2xl border border-white/10 bg-white/[0.06] px-5 py-4 text-sm font-black text-white transition hover:bg-white/[0.1]"
-                >
-                  Prikaži druge odlične možnosti ({otherResults.length})
-                </button>
-              ) : (
+              {showOthers && otherResults.length > 0 && (
                 <div className="mt-3 space-y-2.5 lg:space-y-3">
                   {otherResults.map((item: Result) => (
                     <CompactResult
@@ -555,6 +617,28 @@ function ResultPanel({
                   ))}
                 </div>
               )}
+
+              <button
+                onClick={() => {
+                  if (!showOthers) {
+                    setShowOthers(true)
+                    if (otherResults.length < 5 && hasMore) loadMoreResults()
+                    return
+                  }
+
+                  if (hasMore) loadMoreResults()
+                }}
+                disabled={loadingMore || (!hasMore && showOthers)}
+                className="mt-3 w-full rounded-2xl border border-white/10 bg-white/[0.06] px-5 py-4 text-sm font-black text-white transition hover:bg-white/[0.1] disabled:opacity-60"
+              >
+                {loadingMore
+                  ? 'Računam dodatne možnosti ...'
+                  : !showOthers
+                    ? 'Prikaži druge odlične možnosti'
+                    : hasMore
+                      ? 'Naloži še 5 možnosti'
+                      : 'Prikazane so vse izračunane možnosti'}
+              </button>
             </>
           )}
         </>

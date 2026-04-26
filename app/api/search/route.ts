@@ -4,6 +4,7 @@ import { getDrivingDistance } from '@/lib/ors'
 
 type RouteSource = 'openrouteservice' | 'osrm'
 type SortBy = 'smart' | 'price' | 'distance'
+type Batch = 'initial' | 'more'
 
 type Result = {
   location_id: string
@@ -42,7 +43,8 @@ type AnyResult = RoutedResult & {
   recommendation_reason: string | null
 }
 
-const ROUTED_LIMIT = 12
+const INITIAL_PER_BUCKET = 6
+const MORE_LIMIT = 5
 const ROUTING_CONCURRENCY = 8
 const CONSUMPTION_DEFAULT = 7
 const TIME_VALUE_DEFAULT = 12
@@ -73,6 +75,57 @@ function inferUserCountry(lat: number, lng: number) {
 
 function hasCoords(r: Result): r is Result & { lat: number; lng: number } {
   return Number.isFinite(Number(r.lat)) && Number.isFinite(Number(r.lng))
+}
+
+function candidateScore(row: Result, amount: number) {
+  return Number(row.price) * amount + Number(row.distance_km || 999) * 0.35
+}
+
+function uniqueByLocation(rows: Result[]) {
+  const map = new Map<string, Result>()
+  for (const row of rows) {
+    if (!map.has(row.location_id)) map.set(row.location_id, row)
+  }
+  return Array.from(map.values())
+}
+
+function buildInitialCandidatePool(rows: Result[], amount: number) {
+  const smart = [...rows]
+    .sort((a, b) => candidateScore(a, amount) - candidateScore(b, amount))
+    .slice(0, INITIAL_PER_BUCKET)
+
+  const cheapest = [...rows]
+    .sort((a, b) => {
+      if (a.price !== b.price) return a.price - b.price
+      return n(a.distance_km, 999) - n(b.distance_km, 999)
+    })
+    .slice(0, INITIAL_PER_BUCKET)
+
+  const nearest = [...rows]
+    .sort((a, b) => n(a.distance_km, 999) - n(b.distance_km, 999))
+    .slice(0, INITIAL_PER_BUCKET)
+
+  return uniqueByLocation([...smart, ...cheapest, ...nearest])
+}
+
+function buildMoreCandidatePool(rows: Result[], amount: number, sortBy: SortBy, offset: number) {
+  const sorted = [...rows].sort((a, b) => {
+    if (sortBy === 'price') {
+      if (a.price !== b.price) return a.price - b.price
+      return n(a.distance_km, 999) - n(b.distance_km, 999)
+    }
+
+    if (sortBy === 'distance') {
+      if (n(a.distance_km, 999) !== n(b.distance_km, 999)) {
+        return n(a.distance_km, 999) - n(b.distance_km, 999)
+      }
+      return a.price - b.price
+    }
+
+    return candidateScore(a, amount) - candidateScore(b, amount)
+  })
+
+  return sorted.slice(offset, offset + MORE_LIMIT)
 }
 
 async function mapWithConcurrency<T, R>(
@@ -113,12 +166,10 @@ async function getCachedRoute(
 
   if (error || !data) return null
 
-  const routeSource = data.route_source === 'osrm' ? 'osrm' : 'openrouteservice'
-
   return {
     distance_km: Number(data.distance_km),
     duration_min: Number(data.duration_min),
-    route_source: routeSource as RouteSource,
+    route_source: data.route_source === 'osrm' ? 'osrm' as const : 'openrouteservice' as const,
   }
 }
 
@@ -140,9 +191,7 @@ async function saveCachedRoute(
       distance_km: round(route.distance_km),
       duration_min: Math.round(route.duration_min),
       route_source: route.route_source,
-      expires_at: new Date(
-        Date.now() + ROUTE_CACHE_DAYS * 24 * 60 * 60 * 1000
-      ).toISOString(),
+      expires_at: new Date(Date.now() + ROUTE_CACHE_DAYS * 24 * 60 * 60 * 1000).toISOString(),
     },
     {
       onConflict:
@@ -213,7 +262,7 @@ async function getRoute(
 }
 
 async function enrich(rows: Result[], user: { lat: number; lng: number }) {
-  const candidates = rows.slice(0, ROUTED_LIMIT).filter(hasCoords)
+  const candidates = rows.filter(hasCoords)
 
   const routed = await mapWithConcurrency(
     candidates,
@@ -284,9 +333,6 @@ function sortResults(rows: AnyResult[], sortBy: SortBy) {
     }
 
     if (a.tankaj_score !== b.tankaj_score) return a.tankaj_score - b.tankaj_score
-    if (a.effective_total_cost !== b.effective_total_cost) {
-      return a.effective_total_cost - b.effective_total_cost
-    }
     return a.distance_km - b.distance_km
   })
 }
@@ -316,11 +362,7 @@ export async function GET(req: Request) {
   const radius = Number(searchParams.get('radius') || 25)
   const amount = Number(searchParams.get('amount') || 50)
   const type = searchParams.get('type') || 'PETROL_95'
-
-  const consumption = Number(
-    searchParams.get('consumption') || CONSUMPTION_DEFAULT
-  )
-
+  const consumption = Number(searchParams.get('consumption') || CONSUMPTION_DEFAULT)
   const timeValue = Number(searchParams.get('timeValue') || TIME_VALUE_DEFAULT)
 
   const requestedSortBy = searchParams.get('sortBy') || 'smart'
@@ -328,6 +370,9 @@ export async function GET(req: Request) {
     requestedSortBy === 'price' || requestedSortBy === 'distance'
       ? requestedSortBy
       : 'smart'
+
+  const batch: Batch = searchParams.get('batch') === 'more' ? 'more' : 'initial'
+  const offset = Math.max(0, Number(searchParams.get('offset') || INITIAL_PER_BUCKET))
 
   const brandFilter = normalizeBrand(
     searchParams.get('brand') || searchParams.get('brandFilter')
@@ -372,7 +417,12 @@ export async function GET(req: Request) {
     rows = rows.filter((r) => normalizeBrand(r.brand) === brandFilter)
   }
 
-  const routed = await enrich(rows, { lat, lng })
+  const candidatePool =
+    batch === 'more'
+      ? buildMoreCandidatePool(rows, amount, sortBy, offset)
+      : buildInitialCandidatePool(rows, amount)
+
+  const routed = await enrich(candidatePool, { lat, lng })
   const scored = score(routed, amount, consumption, timeValue, userCountry)
 
   const valid = scored.filter(
@@ -385,25 +435,25 @@ export async function GET(req: Request) {
 
   const winner = pickWinner(valid, sortBy, radius)
 
-  const others = sortResults(
-    valid.filter(
-      (r) => r.location_id !== winner?.location_id && r.distance_km <= radius
-    ),
+  const results = sortResults(
+    valid.filter((r) => r.distance_km <= radius),
     sortBy
-  ).map((r) => ({
-    ...r,
-    recommendation_reason: 'Dobra alternativa.',
-  }))
+  )
 
-  const results = winner ? [winner, ...others] : others
+  const nextOffset = batch === 'more' ? offset + MORE_LIMIT : INITIAL_PER_BUCKET
+  const hasMore = rows.length > nextOffset
 
   return NextResponse.json({
     success: true,
+    batch,
     ranking: sortBy,
     winner,
     results,
+    has_more: hasMore,
+    next_offset: nextOffset,
     counts: {
       all_considered_count: rows.length,
+      candidate_pool_count: candidatePool.length,
       routed_count: routed.length,
       valid_count: valid.length,
       results_count: results.length,
