@@ -53,9 +53,8 @@ const BRANDS = [
 ]
 
 const sortOptions = [
-  ['smart', 'Najboljša izbira'],
-  ['total', 'Najnižji skupni strošek'],
-  ['price', 'Najnižja cena €/L'],
+  ['smart', 'Priporočeno'],
+  ['price', 'Najcenejše €/L'],
   ['distance', 'Najbližje'],
 ]
 
@@ -99,7 +98,7 @@ export default function Home() {
   const [sortBy, setSortBy] = useState('smart')
   const [appMode, setAppMode] = useState<'nearby' | 'route'>('nearby')
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [visibleCount, setVisibleCount] = useState(5)
+  const [visibleCount, setVisibleCount] = useState(0)
 
   const [results, setResults] = useState<Result[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
@@ -138,6 +137,7 @@ export default function Home() {
 
     const requestId = ++activeRequestId.current
     setSearched(true)
+    setVisibleCount(0)
     setStatus('location')
     setSummary(null)
     setVisibleCount(5)
@@ -350,7 +350,7 @@ function HeroSearch({
       <div className="mt-4 grid grid-cols-3 gap-2">
         <MiniInfo title="Gorivo" text="Cena × količina" />
         <MiniInfo title="Pot" text="Do črpalke" />
-        <MiniInfo title="Čas" text="Privzeto 6 €/h" />
+        <MiniInfo title="Čas" text="Privzeto 12 €/h" />
       </div>
     </div>
   )
@@ -402,10 +402,6 @@ function ResultPanel({
               <CompactResult item={crossBorder} label="Čez mejo" mapsUrl={mapsUrl} />
             )}
 
-            {nearest && nearest.location_id !== best.location_id && (
-              <CompactResult item={nearest} label="Najbližja možnost" mapsUrl={mapsUrl} />
-            )}
-
             {visibleResults.map((item: Result) => (
               <CompactResult key={item.location_id} item={item} mapsUrl={mapsUrl} />
             ))}
@@ -417,7 +413,7 @@ function ResultPanel({
                 onClick={() => setVisibleCount((v: number) => v + 5)}
                 className="rounded-2xl border border-white/10 bg-white/[0.06] px-5 py-3 text-sm font-bold text-white transition hover:bg-white/[0.1]"
               >
-                Naloži več rezultatov
+                {visibleCount === 0 ? 'Druge odlične možnosti' : 'Naloži več rezultatov'}
               </button>
             </div>
           )}
@@ -434,7 +430,7 @@ function BestCard({ item, summary, mapsUrl, shareResult, shareCopied }: any) {
     <div className="rounded-[28px] border border-[#b9fb6a]/35 bg-[#071a12]/65 p-4 shadow-[0_18px_60px_rgba(0,0,0,.24)] sm:p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-xs font-black uppercase tracking-[.26em] text-[#b9fb6a]">Najboljša izbira</div>
+          <div className="text-xs font-black uppercase tracking-[.26em] text-[#b9fb6a]">Priporočeno</div>
           <h2 className="mt-2 text-2xl font-black tracking-tight sm:text-3xl">{item.name}</h2>
           <div className="mt-2 text-sm text-white/50">
             {item.address}
@@ -627,7 +623,7 @@ function HowItWorks() {
       <h2 className="text-3xl font-black tracking-tight">Kako deluje?</h2>
       <p className="mt-4 max-w-4xl text-sm leading-relaxed text-white/60 sm:text-base">
         Tankaj.si ne primerja samo cene na liter, ampak izračuna približen skupni strošek tankanja.
-        Upoštevamo ceno goriva, količino, ocenjeno vožnjo do črpalke, povprečno porabo vozila 7 L/100 km, ocenjen čas 6 €/h in pametno omejitev, da ne predlagamo nesmiselno oddaljenih črpalk.
+        Upoštevamo ceno goriva, količino, ocenjeno vožnjo do črpalke, povprečno porabo vozila 7 L/100 km, ocenjen čas 12 €/h in pametno omejitev, da ne predlagamo nesmiselno oddaljenih črpalk.
       </p>
 
       <div className="mt-5 grid gap-3 md:grid-cols-3">
