@@ -27,6 +27,7 @@ type Result = {
 }
 
 type SearchStatus = 'idle' | 'location' | 'routing' | 'done' | 'error'
+type SortBy = 'smart' | 'price' | 'distance'
 
 const BRANDS = [
   ['ALL', 'Vse znamke'],
@@ -40,7 +41,7 @@ const BRANDS = [
   ['CRODUX', 'Crodux'],
 ]
 
-const sortOptions = [
+const sortOptions: [SortBy, string][] = [
   ['smart', 'Priporočeno'],
   ['price', 'Najcenejše €/L'],
   ['distance', 'Najbližje'],
@@ -78,17 +79,48 @@ function formatKm(value?: number | null) {
   return `${Number(value || 0).toFixed(2).replace('.00', '')} km`
 }
 
+function sortClientResults(rows: Result[], sortBy: SortBy) {
+  return [...rows].sort((a, b) => {
+    if (sortBy === 'price') {
+      if (a.price !== b.price) return a.price - b.price
+      if (a.distance_km !== b.distance_km) return a.distance_km - b.distance_km
+      return a.effective_total_cost - b.effective_total_cost
+    }
+
+    if (sortBy === 'distance') {
+      if (a.distance_km !== b.distance_km) return a.distance_km - b.distance_km
+      if (a.price !== b.price) return a.price - b.price
+      return a.effective_total_cost - b.effective_total_cost
+    }
+
+    const aScore = a.tankaj_score ?? a.effective_total_cost
+    const bScore = b.tankaj_score ?? b.effective_total_cost
+
+    if (aScore !== bScore) return aScore - bScore
+    if (a.effective_total_cost !== b.effective_total_cost) {
+      return a.effective_total_cost - b.effective_total_cost
+    }
+
+    return a.distance_km - b.distance_km
+  })
+}
+
+function reasonBySort(sortBy: SortBy) {
+  if (sortBy === 'price') return 'Najcenejša opcija v izbranem radiusu.'
+  if (sortBy === 'distance') return 'Najbližja črpalka po realni poti.'
+  return 'Najboljša kombinacija cene, poti in časa.'
+}
+
 export default function Home() {
   const [fuelType, setFuelType] = useState('PETROL_95')
   const [radius, setRadius] = useState(50)
   const [amount, setAmount] = useState(50)
   const [brand, setBrand] = useState('ALL')
-  const [sortBy, setSortBy] = useState('smart')
+  const [sortBy, setSortBy] = useState<SortBy>('smart')
   const [appMode, setAppMode] = useState<'nearby' | 'route'>('nearby')
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [showOthers, setShowOthers] = useState(false)
 
-  const [winner, setWinner] = useState<Result | null>(null)
   const [results, setResults] = useState<Result[]>([])
   const [status, setStatus] = useState<SearchStatus>('idle')
   const [searched, setSearched] = useState(false)
@@ -96,16 +128,23 @@ export default function Home() {
   const activeRequestId = useRef(0)
 
   const loading = status === 'location' || status === 'routing'
-  const best = winner || results?.[0] || null
+
+  const sortedResults = useMemo(() => {
+    return sortClientResults(results, sortBy)
+  }, [results, sortBy])
+
+  const best = sortedResults[0] || null
 
   const otherResults = useMemo(() => {
     const unique = new Map<string, Result>()
-    for (const item of results) {
+
+    for (const item of sortedResults) {
       if (best?.location_id === item.location_id) continue
       if (!unique.has(item.location_id)) unique.set(item.location_id, item)
     }
+
     return Array.from(unique.values())
-  }, [results, best])
+  }, [sortedResults, best])
 
   const nearest = useMemo(() => {
     if (!results.length) return null
@@ -135,7 +174,6 @@ export default function Home() {
     setSearched(true)
     setShowOthers(false)
     setStatus('location')
-    setWinner(null)
     setResults([])
 
     if (!navigator.geolocation) {
@@ -154,13 +192,12 @@ export default function Home() {
           const lng = position.coords.longitude
 
           const res = await fetch(
-            `/api/search?lat=${lat}&lng=${lng}&type=${fuelType}&radius=${radius}&amount=${amount}&brand=${brand}&mode=${appMode}&sortBy=${sortBy}`
+            `/api/search?lat=${lat}&lng=${lng}&type=${fuelType}&radius=${radius}&amount=${amount}&brand=${brand}&mode=${appMode}`
           )
 
           const json = await res.json()
           if (requestId !== activeRequestId.current) return
 
-          setWinner(json.winner || json.results?.[0] || null)
           setResults(json.results || [])
           setStatus('done')
         } catch {
@@ -199,6 +236,11 @@ export default function Home() {
     setTimeout(() => setShareCopied(false), 1800)
   }
 
+  function handleSortChange(value: SortBy) {
+    setSortBy(value)
+    setShowOthers(false)
+  }
+
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#06140f] text-white">
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(185,251,106,.23),transparent_28%),radial-gradient(circle_at_92%_12%,rgba(44,120,76,.24),transparent_34%),linear-gradient(180deg,#071a12_0%,#04100b_100%)]" />
@@ -214,8 +256,6 @@ export default function Home() {
             setAmount={setAmount}
             brand={brand}
             setBrand={setBrand}
-            sortBy={sortBy}
-            setSortBy={setSortBy}
             appMode={appMode}
             setAppMode={setAppMode}
             showAdvanced={showAdvanced}
@@ -227,6 +267,8 @@ export default function Home() {
 
           <ResultPanel
             best={best}
+            sortBy={sortBy}
+            setSortBy={handleSortChange}
             otherResults={otherResults}
             showOthers={showOthers}
             setShowOthers={setShowOthers}
@@ -256,8 +298,6 @@ function HeroSearch({
   setAmount,
   brand,
   setBrand,
-  sortBy,
-  setSortBy,
   appMode,
   setAppMode,
   showAdvanced,
@@ -287,7 +327,7 @@ function HeroSearch({
       </h1>
 
       <p className="mt-5 max-w-lg text-base leading-relaxed text-white/60 sm:text-lg">
-        Izberi radij, gorivo in količino. Tankaj.si nato primerja ceno, realno pot do črpalke in ocenjen čas.
+        Izberi radij, gorivo in količino. Tankaj.si nato enkrat izračuna realne poti, ti pa lahko rezultate takoj razvrščaš brez ponovnega čakanja.
       </p>
 
       <ModeSwitch appMode={appMode} setAppMode={setAppMode} />
@@ -312,8 +352,6 @@ function HeroSearch({
               className="h-12 w-full rounded-2xl border border-white/10 bg-[#071a12] px-4 text-[15px] font-semibold text-white outline-none transition focus:border-[#b9fb6a]/70"
             />
           </label>
-
-          <SelectDark label="Razvrsti po" value={sortBy} onChange={setSortBy} options={sortOptions} />
 
           {showAdvanced && (
             <SelectDark label="Znamke" value={brand} onChange={setBrand} options={BRANDS} />
@@ -348,6 +386,8 @@ function HeroSearch({
 
 function ResultPanel({
   best,
+  sortBy,
+  setSortBy,
   otherResults,
   showOthers,
   setShowOthers,
@@ -376,8 +416,30 @@ function ResultPanel({
 
       {!loading && best && (
         <>
+          <div className="mb-4 rounded-[24px] border border-white/10 bg-black/15 p-1">
+            <div className="grid grid-cols-3 gap-1">
+              {sortOptions.map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setSortBy(value)}
+                  className={`rounded-[19px] px-2 py-3 text-xs font-black transition sm:text-sm ${
+                    sortBy === value
+                      ? 'bg-[#b9fb6a] text-[#071a12] shadow-[0_10px_24px_rgba(185,251,106,.18)]'
+                      : 'text-white/55 hover:bg-white/[0.06] hover:text-white'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <BestCard
-            item={best}
+            item={{
+              ...best,
+              recommendation_reason: reasonBySort(sortBy),
+            }}
             savingVsNearest={savingVsNearest}
             mapsUrl={mapsUrl}
             shareResult={shareResult}
@@ -605,13 +667,13 @@ function HowItWorks() {
     <section className="mt-5 rounded-[30px] border border-white/10 bg-white/[0.055] p-5 backdrop-blur-2xl sm:p-7">
       <h2 className="text-3xl font-black tracking-tight">Kako deluje?</h2>
       <p className="mt-4 max-w-4xl text-sm leading-relaxed text-white/60 sm:text-base">
-        Tankaj.si ne primerja samo cene na liter. Upošteva izbran radij, količino goriva, realno vožnjo do črpalke, ocenjeno porabo vozila in čas. Zato je rezultat bolj uporaben kot navaden seznam najcenejših črpalk.
+        Tankaj.si ob prvem iskanju izračuna realne poti do smiselnih črpalk v izbranem radiju. Nato lahko rezultate takoj preklapljaš med priporočeno izbiro, najcenejšo ceno na liter in najbližjo črpalko — brez ponovnega čakanja.
       </p>
 
       <div className="mt-5 grid gap-3 md:grid-cols-3">
         <MiniInfo title="Formula" text="gorivo + pot + čas" />
         <MiniInfo title="Radius" text="Vedno upoštevamo tvoj izbor" />
-        <MiniInfo title="Rezultat" text="1 najboljša izbira + alternative" />
+        <MiniInfo title="Hitro preklapljanje" text="Razvrščanje brez novega API klica" />
       </div>
     </section>
   )
