@@ -42,8 +42,8 @@ type AnyResult = RoutedResult & {
   recommendation_reason: string | null
 }
 
-const ROUTED_LIMIT = 60
-const ROUTING_CONCURRENCY = 6
+const ROUTED_LIMIT = 12
+const ROUTING_CONCURRENCY = 8
 const CONSUMPTION_DEFAULT = 7
 const TIME_VALUE_DEFAULT = 12
 const ROUTE_CACHE_DAYS = 30
