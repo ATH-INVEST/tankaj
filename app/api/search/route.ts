@@ -331,10 +331,14 @@ function sortBySelectedFilter(rows: AnyResult[], sortBy: string) {
     }
 
     if (a.tankaj_score !== b.tankaj_score) return a.tankaj_score - b.tankaj_score
-    if (a.effective_total_cost !== b.effective_total_cost) {
-      return a.effective_total_cost - b.effective_total_cost
-    }
-    return a.distance_km - b.distance_km
+    const aTotal = a.effective_total_cost ?? Number.POSITIVE_INFINITY
+const bTotal = b.effective_total_cost ?? Number.POSITIVE_INFINITY
+
+if (aTotal !== bTotal) {
+  return aTotal - bTotal
+}
+
+return (a.distance_km ?? Number.POSITIVE_INFINITY) - (b.distance_km ?? Number.POSITIVE_INFINITY)
   })
 }
 
