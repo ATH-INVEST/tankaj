@@ -20,22 +20,10 @@ type Result = {
   time_cost: number
   effective_total_cost: number
   tankaj_score?: number
-  is_preferred_brand?: boolean
   is_cross_border?: boolean
   route_source?: string
   captured_at?: string
   recommendation_reason?: string | null
-  smart_warning?: string | null
-}
-
-type Summary = {
-  best_overall: Result | null
-  nearest: Result | null
-  cheapest_fuel: Result | null
-  best_cross_border: Result | null
-  preferred_best: Result | null
-  saving_vs_nearest: number
-  saving_vs_cheapest_fuel: number
 }
 
 type SearchStatus = 'idle' | 'location' | 'routing' | 'done' | 'error'
@@ -98,28 +86,36 @@ export default function Home() {
   const [sortBy, setSortBy] = useState('smart')
   const [appMode, setAppMode] = useState<'nearby' | 'route'>('nearby')
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [visibleCount, setVisibleCount] = useState(0)
+  const [showOthers, setShowOthers] = useState(false)
 
+  const [winner, setWinner] = useState<Result | null>(null)
   const [results, setResults] = useState<Result[]>([])
-  const [summary, setSummary] = useState<Summary | null>(null)
   const [status, setStatus] = useState<SearchStatus>('idle')
   const [searched, setSearched] = useState(false)
   const [shareCopied, setShareCopied] = useState(false)
   const activeRequestId = useRef(0)
 
   const loading = status === 'location' || status === 'routing'
-  const best = summary?.best_overall || results?.[0] || null
-  const nearest = summary?.nearest || null
-  const crossBorder = summary?.best_cross_border || null
+  const best = winner || results?.[0] || null
 
-  const visibleResults = useMemo(() => {
+  const otherResults = useMemo(() => {
     const unique = new Map<string, Result>()
     for (const item of results) {
       if (best?.location_id === item.location_id) continue
       if (!unique.has(item.location_id)) unique.set(item.location_id, item)
     }
-    return Array.from(unique.values()).slice(0, visibleCount)
-  }, [results, best, visibleCount])
+    return Array.from(unique.values())
+  }, [results, best])
+
+  const nearest = useMemo(() => {
+    if (!results.length) return null
+    return [...results].sort((a, b) => a.distance_km - b.distance_km)[0] || null
+  }, [results])
+
+  const savingVsNearest = useMemo(() => {
+    if (!best || !nearest || best.location_id === nearest.location_id) return 0
+    return Number((nearest.effective_total_cost - best.effective_total_cost).toFixed(2))
+  }, [best, nearest])
 
   const lastUpdated = useMemo(() => {
     if (!best?.captured_at) return null
@@ -137,10 +133,10 @@ export default function Home() {
 
     const requestId = ++activeRequestId.current
     setSearched(true)
-    setVisibleCount(0)
+    setShowOthers(false)
     setStatus('location')
-    setSummary(null)
-    setVisibleCount(5)
+    setWinner(null)
+    setResults([])
 
     if (!navigator.geolocation) {
       alert('Tvoj brskalnik ne podpira zaznave lokacije.')
@@ -164,8 +160,8 @@ export default function Home() {
           const json = await res.json()
           if (requestId !== activeRequestId.current) return
 
+          setWinner(json.winner || json.results?.[0] || null)
           setResults(json.results || [])
-          setSummary(json.summary || null)
           setStatus('done')
         } catch {
           if (requestId !== activeRequestId.current) return
@@ -187,10 +183,10 @@ export default function Home() {
 
   async function shareResult() {
     if (!best) return
-    const saving = Number(summary?.saving_vs_nearest || 0)
+
     const text =
-      saving > 0.2
-        ? `Tankaj.si mi je našel pametnejšo izbiro za tankanje. Prihranek: približno ${saving.toFixed(2)} €.`
+      savingVsNearest > 0.2
+        ? `Tankaj.si mi je našel boljšo izbiro za tankanje. Prihranek: približno ${savingVsNearest.toFixed(2)} €.`
         : `Tankaj.si mi je našel najbolj smiselno črpalko glede na ceno, razdaljo in strošek poti.`
 
     if (navigator.share) {
@@ -231,18 +227,14 @@ export default function Home() {
 
           <ResultPanel
             best={best}
-            nearest={nearest}
-            crossBorder={crossBorder}
-            visibleResults={visibleResults}
-            resultsLength={results.length}
-            visibleCount={visibleCount}
-            setVisibleCount={setVisibleCount}
+            otherResults={otherResults}
+            showOthers={showOthers}
+            setShowOthers={setShowOthers}
             loading={loading}
             searched={searched}
             status={status}
             lastUpdated={lastUpdated}
-            summary={summary}
-            amount={amount}
+            savingVsNearest={savingVsNearest}
             mapsUrl={mapsUrl}
             shareResult={shareResult}
             shareCopied={shareCopied}
@@ -295,14 +287,14 @@ function HeroSearch({
       </h1>
 
       <p className="mt-5 max-w-lg text-base leading-relaxed text-white/60 sm:text-lg">
-        Tankaj.si izračuna, kje se ti v bližini najbolj splača tankati glede na ceno goriva, vožnjo do črpalke, čas in tvoje preference.
+        Izberi radij, gorivo in količino. Tankaj.si nato primerja ceno, realno pot do črpalke in ocenjen čas.
       </p>
 
       <ModeSwitch appMode={appMode} setAppMode={setAppMode} />
 
       {appMode === 'route' && (
         <div className="mt-4 rounded-[22px] border border-[#b9fb6a]/20 bg-[#b9fb6a]/10 p-4 text-sm leading-relaxed text-[#b9fb6a]">
-          <span className="font-black">Na poti</span> bo iskal črpalke med tvojo lokacijo in ciljem — glede na odstopanje od poti, ne samo razdaljo. To dodamo v naslednjem koraku.
+          <span className="font-black">Na poti</span> bo iskal črpalke med tvojo lokacijo in ciljem. To dodamo v naslednjem koraku.
         </div>
       )}
 
@@ -324,9 +316,7 @@ function HeroSearch({
           <SelectDark label="Razvrsti po" value={sortBy} onChange={setSortBy} options={sortOptions} />
 
           {showAdvanced && (
-            <>
-              <SelectDark label="Znamke" value={brand} onChange={setBrand} options={BRANDS} />
-            </>
+            <SelectDark label="Znamke" value={brand} onChange={setBrand} options={BRANDS} />
           )}
 
           <button
@@ -342,14 +332,14 @@ function HeroSearch({
             disabled={loading || appMode === 'route'}
             className="h-12 rounded-2xl bg-[#b9fb6a] px-5 text-sm font-black text-[#071a12] shadow-[0_12px_30px_rgba(185,251,106,.22)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70 sm:col-span-2"
           >
-            {appMode === 'route' ? 'Na poti kmalu' : status === 'location' ? 'Pridobivam lokacijo ...' : status === 'routing' ? 'Računam izbiro ...' : 'Preveri najboljšo izbiro'}
+            {appMode === 'route' ? 'Na poti kmalu' : status === 'location' ? 'Pridobivam lokacijo ...' : status === 'routing' ? 'Računam realne poti ...' : 'Preveri najboljšo izbiro'}
           </button>
         </div>
       </div>
 
       <div className="mt-4 grid grid-cols-3 gap-2">
         <MiniInfo title="Gorivo" text="Cena × količina" />
-        <MiniInfo title="Pot" text="Do črpalke" />
+        <MiniInfo title="Pot" text="Realna vožnja" />
         <MiniInfo title="Čas" text="Privzeto 12 €/h" />
       </div>
     </div>
@@ -358,17 +348,14 @@ function HeroSearch({
 
 function ResultPanel({
   best,
-  nearest,
-  crossBorder,
-  visibleResults,
-  resultsLength,
-  visibleCount,
-  setVisibleCount,
+  otherResults,
+  showOthers,
+  setShowOthers,
   loading,
   searched,
   status,
   lastUpdated,
-  summary,
+  savingVsNearest,
   mapsUrl,
   shareResult,
   shareCopied,
@@ -378,7 +365,7 @@ function ResultPanel({
       {loading && <LoadingState status={status} />}
 
       {searched && !loading && status === 'done' && !best && (
-        <EmptyState text="V izbranem radiusu trenutno ni zadetkov. Poskusi povečati radius ali prikazati vse znamke." />
+        <EmptyState text="V izbranem radiusu trenutno ni realno izračunanih možnosti. Poskusi povečati radius ali prikazati vse znamke." />
       )}
 
       {searched && !loading && status === 'error' && (
@@ -389,33 +376,36 @@ function ResultPanel({
 
       {!loading && best && (
         <>
-          <BestCard item={best} summary={summary} mapsUrl={mapsUrl} shareResult={shareResult} shareCopied={shareCopied} />
+          <BestCard
+            item={best}
+            savingVsNearest={savingVsNearest}
+            mapsUrl={mapsUrl}
+            shareResult={shareResult}
+            shareCopied={shareCopied}
+          />
 
-          <div className="mt-4 flex items-center justify-between gap-3">
-            <h2 className="text-xl font-black tracking-tight">Druge odlične možnosti</h2>
-            {lastUpdated && <div className="text-xs text-white/40">Cene {lastUpdated}</div>}
-          </div>
+          {otherResults.length > 0 && (
+            <>
+              <div className="mt-4 flex items-center justify-between gap-3">
+                <h2 className="text-xl font-black tracking-tight">Druge odlične možnosti</h2>
+                {lastUpdated && <div className="text-xs text-white/40">Cene {lastUpdated}</div>}
+              </div>
 
-          <div className="mt-3 space-y-2.5 lg:space-y-3">
-
-            {crossBorder && crossBorder.location_id !== best.location_id && (
-              <CompactResult item={crossBorder} label="Čez mejo" mapsUrl={mapsUrl} />
-            )}
-
-            {visibleResults.map((item: Result) => (
-              <CompactResult key={item.location_id} item={item} mapsUrl={mapsUrl} />
-            ))}
-          </div>
-
-          {resultsLength > visibleCount && (
-            <div className="mt-4 flex justify-center">
-              <button
-                onClick={() => setVisibleCount((v: number) => v + 5)}
-                className="rounded-2xl border border-white/10 bg-white/[0.06] px-5 py-3 text-sm font-bold text-white transition hover:bg-white/[0.1]"
-              >
-                {visibleCount === 0 ? 'Druge odlične možnosti' : 'Naloži več rezultatov'}
-              </button>
-            </div>
+              {!showOthers ? (
+                <button
+                  onClick={() => setShowOthers(true)}
+                  className="mt-3 w-full rounded-2xl border border-white/10 bg-white/[0.06] px-5 py-4 text-sm font-black text-white transition hover:bg-white/[0.1]"
+                >
+                  Prikaži druge odlične možnosti ({otherResults.length})
+                </button>
+              ) : (
+                <div className="mt-3 space-y-2.5 lg:space-y-3">
+                  {otherResults.map((item: Result) => (
+                    <CompactResult key={item.location_id} item={item} mapsUrl={mapsUrl} />
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </>
       )}
@@ -423,14 +413,12 @@ function ResultPanel({
   )
 }
 
-function BestCard({ item, summary, mapsUrl, shareResult, shareCopied }: any) {
-  const saving = Number(summary?.saving_vs_nearest || 0)
-
+function BestCard({ item, savingVsNearest, mapsUrl, shareResult, shareCopied }: any) {
   return (
     <div className="rounded-[28px] border border-[#b9fb6a]/35 bg-[#071a12]/65 p-4 shadow-[0_18px_60px_rgba(0,0,0,.24)] sm:p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-xs font-black uppercase tracking-[.26em] text-[#b9fb6a]">Priporočeno</div>
+          <div className="text-xs font-black uppercase tracking-[.26em] text-[#b9fb6a]">Najboljša izbira</div>
           <h2 className="mt-2 text-2xl font-black tracking-tight sm:text-3xl">{item.name}</h2>
           <div className="mt-2 text-sm text-white/50">
             {item.address}
@@ -475,14 +463,14 @@ function BestCard({ item, summary, mapsUrl, shareResult, shareCopied }: any) {
         </div>
 
         <div className="mt-3 rounded-2xl border border-[#b9fb6a]/70 bg-[#b9fb6a]/12 p-4 text-white shadow-[0_0_0_1px_rgba(185,251,106,.08),0_18px_46px_rgba(185,251,106,.10)]">
-          <div className="text-xs font-black uppercase tracking-[.2em] text-[#b9fb6a]/85">Končni strošek</div>
+          <div className="text-xs font-black uppercase tracking-[.2em] text-[#b9fb6a]/85">Ocenjen skupni strošek</div>
           <div className="mt-1 text-3xl font-black text-[#b9fb6a]">{formatMoney(item.effective_total_cost)}</div>
         </div>
       </div>
 
-      {saving > 0.2 && (
+      {savingVsNearest > 0.2 && (
         <div className="mt-3 rounded-2xl bg-[#b9fb6a]/14 px-4 py-3 text-sm text-[#b9fb6a]">
-          <span className="font-black">Prihranek:</span> približno {saving.toFixed(2)} € proti najbližji možnosti.
+          <span className="font-black">Prihranek:</span> približno {savingVsNearest.toFixed(2)} € proti najbližji možnosti.
         </div>
       )}
 
@@ -510,7 +498,7 @@ function BestCard({ item, summary, mapsUrl, shareResult, shareCopied }: any) {
   )
 }
 
-function CompactResult({ item, label, mapsUrl }: { item: Result; label?: string; mapsUrl: (item: Result) => string }) {
+function CompactResult({ item, mapsUrl }: { item: Result; mapsUrl: (item: Result) => string }) {
   return (
     <a
       href={mapsUrl(item)}
@@ -526,12 +514,7 @@ function CompactResult({ item, label, mapsUrl }: { item: Result; label?: string;
 
           <div className="min-w-0">
             <div className="truncate text-sm font-black text-white">{item.name}</div>
-            <div className="mt-0.5 truncate text-[11px] text-white/40">{label || item.address}</div>
-            {item.smart_warning && (
-              <div className="mt-1 truncate text-[11px] font-semibold text-[#b9fb6a]/75">
-                {item.smart_warning}
-              </div>
-            )}
+            <div className="mt-0.5 truncate text-[11px] text-white/40">{item.address}</div>
             <div className="mt-1 text-lg font-black text-[#b9fb6a]">{item.price.toFixed(3)} €/L</div>
           </div>
         </div>
@@ -579,7 +562,7 @@ function LoadingState({ status }: { status: SearchStatus }) {
   return (
     <div className="rounded-[28px] border border-white/10 bg-white/[0.06] p-5">
       <div className="text-sm font-semibold text-white/55">
-        {status === 'location' ? 'Pridobivam tvojo lokacijo ...' : 'Primerjam črpalke, cene in strošek poti ...'}
+        {status === 'location' ? 'Pridobivam tvojo lokacijo ...' : 'Računam realne poti in strošek tankanja ...'}
       </div>
       <div className="mt-5 h-10 w-64 animate-pulse rounded-full bg-white/10" />
       <div className="mt-6 space-y-3">
@@ -622,19 +605,17 @@ function HowItWorks() {
     <section className="mt-5 rounded-[30px] border border-white/10 bg-white/[0.055] p-5 backdrop-blur-2xl sm:p-7">
       <h2 className="text-3xl font-black tracking-tight">Kako deluje?</h2>
       <p className="mt-4 max-w-4xl text-sm leading-relaxed text-white/60 sm:text-base">
-        Tankaj.si ne primerja samo cene na liter, ampak izračuna približen skupni strošek tankanja.
-        Upoštevamo ceno goriva, količino, ocenjeno vožnjo do črpalke, povprečno porabo vozila 7 L/100 km, ocenjen čas 12 €/h in pametno omejitev, da ne predlagamo nesmiselno oddaljenih črpalk.
+        Tankaj.si ne primerja samo cene na liter. Upošteva izbran radij, količino goriva, realno vožnjo do črpalke, ocenjeno porabo vozila in čas. Zato je rezultat bolj uporaben kot navaden seznam najcenejših črpalk.
       </p>
 
       <div className="mt-5 grid gap-3 md:grid-cols-3">
-        <MiniInfo title="Formula" text="gorivo + pot + čas = končni strošek" />
-        <MiniInfo title="Pot" text="Računamo vožnjo do izbrane črpalke." />
-        <MiniInfo title="Smart limit" text="Daleč stran ni dobra izbira samo zaradi nekaj centov." />
+        <MiniInfo title="Formula" text="gorivo + pot + čas" />
+        <MiniInfo title="Radius" text="Vedno upoštevamo tvoj izbor" />
+        <MiniInfo title="Rezultat" text="1 najboljša izbira + alternative" />
       </div>
     </section>
   )
 }
-
 
 function ModeSwitch({
   appMode,
@@ -671,7 +652,6 @@ function ModeSwitch({
     </div>
   )
 }
-
 
 function SelectDark({
   label,
