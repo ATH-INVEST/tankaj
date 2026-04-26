@@ -50,56 +50,32 @@ const BRANDS = [
   ['CRODUX', 'Crodux'],
 ]
 
-const FUEL_OPTIONS = [
-  ['PETROL_95', 'Bencin 95'],
-  ['DIESEL', 'Dizel'],
-]
-
-const RADIUS_OPTIONS = [
-  ['5', '5 km'],
-  ['10', '10 km'],
-  ['25', '25 km'],
-  ['50', '50 km'],
-  ['100', '100 km'],
-  ['200', '200 km'],
-]
-
-const TRIP_OPTIONS = [
-  ['return', 'Grem samo tankat'],
-  ['oneway', 'Je spotoma'],
-]
-
-const SORT_OPTIONS = [
-  ['smart', 'Najboljša izbira'],
-  ['total', 'Najnižji skupni strošek'],
-  ['price', 'Najnižja cena €/L'],
-  ['distance', 'Najbližje'],
-]
-
 function brandShort(brand?: string | null) {
   if (!brand) return 'BS'
   const b = brand.toUpperCase()
   if (b.includes('PETROL')) return 'P'
-  if (b.includes('MOL')) return 'MOL'
   if (b.includes('SHELL')) return 'SH'
+  if (b.includes('MOL')) return 'MOL'
   if (b.includes('OMV')) return 'OMV'
   if (b.includes('INA')) return 'INA'
-  if (b.includes('TIFON')) return 'TF'
+  if (b.includes('TIFON')) return 'T'
+  if (b.includes('CRODUX')) return 'C'
   return b.slice(0, 3)
 }
 
 function brandBadgeClass(brand?: string | null) {
   const b = (brand || '').toUpperCase()
-  if (b.includes('PETROL')) return 'bg-[#e31b23] text-white'
-  if (b.includes('MOL')) return 'bg-[#b01222] text-white'
-  if (b.includes('SHELL')) return 'bg-[#ffd83d] text-[#b01222]'
-  if (b.includes('OMV')) return 'bg-white text-[#00856f]'
-  if (b.includes('INA')) return 'bg-[#005baa] text-white'
-  if (b.includes('TIFON')) return 'bg-[#f37021] text-white'
-  return 'bg-white text-[#10251b]'
+  if (b.includes('PETROL')) return 'bg-[#ed1c24] text-white'
+  if (b.includes('MOL')) return 'bg-[#b80f1f] text-white'
+  if (b.includes('SHELL')) return 'bg-[#ffd646] text-[#7d1b13]'
+  if (b.includes('OMV')) return 'bg-white text-[#02745f] ring-1 ring-black/10'
+  if (b.includes('INA')) return 'bg-[#006bb6] text-white'
+  if (b.includes('TIFON')) return 'bg-[#1a1a1a] text-white'
+  if (b.includes('CRODUX')) return 'bg-[#0057a8] text-white'
+  return 'bg-[#10251b] text-white'
 }
 
-function formatMoney(value?: number | null) {
+function formatEur(value: number | string | null | undefined) {
   return `${Number(value || 0).toFixed(2)} €`
 }
 
@@ -111,7 +87,7 @@ export default function Home() {
   const [preferredBrand, setPreferredBrand] = useState('NONE')
   const [tripMode, setTripMode] = useState('return')
   const [sortBy, setSortBy] = useState('smart')
-  const [visibleCount, setVisibleCount] = useState(5)
+  const [visibleCount, setVisibleCount] = useState(4)
 
   const [results, setResults] = useState<Result[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
@@ -126,7 +102,27 @@ export default function Home() {
   const crossBorder = summary?.best_cross_border || null
   const preferredPick = summary?.preferred_best || null
 
-  const visibleResults = results.slice(0, visibleCount)
+  const featuredAlternatives = useMemo(() => {
+    const added = new Set<string>()
+    const items: { item: Result; label?: string }[] = []
+
+    function add(item?: Result | null, label?: string) {
+      if (!item || !best || item.location_id === best.location_id || added.has(item.location_id)) return
+      added.add(item.location_id)
+      items.push({ item, label })
+    }
+
+    add(preferredPick, 'Preferirana znamka')
+    add(crossBorder, 'Čez mejo')
+    add(nearest, 'Najbližje')
+
+    for (const item of results) {
+      if (items.length >= visibleCount) break
+      add(item)
+    }
+
+    return items
+  }, [best, preferredPick, crossBorder, nearest, results, visibleCount])
 
   const lastUpdated = useMemo(() => {
     if (!best?.captured_at) return null
@@ -141,7 +137,7 @@ export default function Home() {
     setSearched(true)
     setStatus('location')
     setSummary(null)
-    setVisibleCount(5)
+    setVisibleCount(4)
 
     if (!navigator.geolocation) {
       alert('Tvoj brskalnik ne podpira zaznave lokacije.')
@@ -157,7 +153,6 @@ export default function Home() {
         try {
           const lat = position.coords.latitude
           const lng = position.coords.longitude
-
           const res = await fetch(
             `/api/search?lat=${lat}&lng=${lng}&type=${fuelType}&radius=${radius}&amount=${amount}&brand=${brand}&preferredBrand=${preferredBrand === 'NONE' ? '' : preferredBrand}&tripMode=${tripMode}&sortBy=${sortBy}`
           )
@@ -168,10 +163,6 @@ export default function Home() {
           setResults(json.results || [])
           setSummary(json.summary || null)
           setStatus('done')
-
-          setTimeout(() => {
-            document.getElementById('rezultat')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-          }, 100)
         } catch {
           if (requestId !== activeRequestId.current) return
           setStatus('error')
@@ -193,10 +184,9 @@ export default function Home() {
   async function shareResult() {
     if (!best) return
     const saving = Number(summary?.saving_vs_nearest || 0)
-    const text =
-      saving > 0.2
-        ? `Tankaj.si mi je našel pametnejšo izbiro za tankanje. Prihranek: približno ${saving.toFixed(2)} €.`
-        : `Tankaj.si mi je našel najbolj smiselno črpalko glede na ceno, razdaljo in strošek poti.`
+    const text = saving > 0.2
+      ? `Tankaj.si mi je našel pametnejšo izbiro za tankanje. Prihranek: približno ${saving.toFixed(2)} €.`
+      : `Tankaj.si mi je našel najbolj smiselno črpalko glede na ceno, razdaljo in strošek poti.`
 
     if (navigator.share) {
       await navigator.share({ title: 'Tankaj.si', text, url: window.location.origin })
@@ -208,99 +198,86 @@ export default function Home() {
     setTimeout(() => setShareCopied(false), 1800)
   }
 
-  function MainResultCard({ item }: { item: Result }) {
+  function HeroResultCard({ item }: { item: Result }) {
     const saving = Number(summary?.saving_vs_nearest || 0)
 
     return (
-      <div id="rezultat" className="scroll-mt-5 overflow-hidden rounded-[30px] border border-[#b9fb6a]/30 bg-[linear-gradient(180deg,rgba(20,52,36,.96),rgba(7,24,16,.98))] p-4 text-white shadow-[0_28px_90px_rgba(0,0,0,.35)] sm:rounded-[34px] sm:p-6">
-        <div className="flex items-center justify-between gap-3">
+      <div className="rounded-[30px] bg-white p-4 shadow-[0_18px_55px_rgba(16,37,27,.10)] ring-1 ring-black/5 sm:p-5 lg:p-6">
+        <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[.18em] text-[#b9fb6a]">Najboljša izbira</div>
-            <h2 className="mt-2 text-2xl font-black tracking-tight sm:text-4xl">{item.name}</h2>
+            <div className="text-[11px] font-black uppercase tracking-[.22em] text-[#0f6b46]">Najboljša izbira</div>
+            <h2 className="mt-2 text-2xl font-black tracking-tight text-[#10251b] sm:text-3xl">{item.name}</h2>
+            <p className="mt-1 line-clamp-1 text-sm text-[#6a7872]">
+              {item.address}{item.city ? `, ${item.city}` : ''}
+            </p>
           </div>
-          <div className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-white/70">
-            {item.country_code || 'SI'}{item.is_cross_border ? ' · čez mejo' : ''}
+
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-[#eef5f0] px-2.5 py-1 text-xs font-bold text-[#607067]">{item.country_code || 'SI'}</span>
+            {item.is_cross_border && <span className="rounded-full bg-[#B9FB6A] px-2.5 py-1 text-xs font-bold text-[#17311e]">čez mejo</span>}
           </div>
         </div>
 
-        <div className="mt-3 text-sm text-white/55 sm:text-base">
-          {item.address}{item.city ? `, ${item.city}` : ''}
-        </div>
-
-        <div className="mt-5 rounded-[26px] border border-white/10 bg-white/[0.07] p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-xs font-black shadow-sm ${brandBadgeClass(item.brand)}`}>
-                {brandShort(item.brand)}
-              </div>
-              <div>
-                <div className="text-sm text-white/45">Cena goriva</div>
-                <div className="text-3xl font-black text-[#b9fb6a] sm:text-4xl">{item.price.toFixed(3)} €/L</div>
-              </div>
+        <div className="mt-5 rounded-[24px] bg-[#f3f8f4] p-4 ring-1 ring-black/5">
+          <div className="grid grid-cols-[auto_1fr_auto] items-center gap-4">
+            <div className={`flex h-13 w-13 items-center justify-center rounded-2xl text-sm font-black ${brandBadgeClass(item.brand)}`}>{brandShort(item.brand)}</div>
+            <div>
+              <div className="text-xs font-medium text-[#6a7872]">Cena goriva</div>
+              <div className="text-3xl font-black tracking-tight text-[#0f6b46]">{item.price.toFixed(3)} €/L</div>
             </div>
             <div className="text-right">
-              <div className="text-sm text-white/45">Vožnja</div>
-              <div className="text-lg font-bold">{item.distance_km} km</div>
-              <div className="text-xs text-white/45">~{item.estimated_drive_minutes} min</div>
+              <div className="text-xs text-[#6a7872]">Vožnja</div>
+              <div className="font-black text-[#10251b]">{item.distance_km} km</div>
+              <div className="text-xs text-[#6a7872]">~{item.estimated_drive_minutes} min</div>
             </div>
           </div>
 
-          <div className="mt-5 grid grid-cols-3 gap-2">
-            <MiniMetric label="Gorivo" value={formatMoney(item.fuel_cost)} />
-            <MiniMetric label="Pot" value={formatMoney(item.travel_fuel_cost)} />
-            <MiniMetric label="Čas" value={formatMoney(item.time_cost)} />
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            <MiniMetric label="Gorivo" value={formatEur(item.fuel_cost)} />
+            <MiniMetric label="Pot" value={formatEur(item.travel_fuel_cost)} />
+            <MiniMetric label="Čas" value={formatEur(item.time_cost)} />
           </div>
 
-          <div className="mt-3 rounded-2xl bg-[#b9fb6a] p-4 text-[#10251b]">
-            <div className="text-xs font-semibold uppercase tracking-[.14em] opacity-70">Končni strošek</div>
-            <div className="mt-1 text-3xl font-black">{formatMoney(item.effective_total_cost)}</div>
+          <div className="mt-3 rounded-2xl bg-[#B9FB6A] p-4 text-[#10251b]">
+            <div className="text-[11px] font-black uppercase tracking-[.18em] opacity-70">Končni strošek</div>
+            <div className="mt-1 text-4xl font-black tracking-tight">{formatEur(item.effective_total_cost)}</div>
           </div>
         </div>
 
         {saving > 0.2 && (
-          <div className="mt-4 rounded-2xl border border-[#b9fb6a]/20 bg-[#b9fb6a]/12 px-4 py-3 text-[#b9fb6a]">
-            <span className="font-bold">Prihranek:</span> približno {saving.toFixed(2)} € proti najbližji možnosti.
+          <div className="mt-3 rounded-2xl bg-[#efffe1] px-4 py-3 text-sm font-semibold text-[#0d6b43]">
+            Prihranek približno {saving.toFixed(2)} € proti najbližji možnosti.
           </div>
         )}
 
-        <div className="mt-5 flex gap-3">
-          <a href={mapsUrl(item)} target="_blank" rel="noopener noreferrer" className="flex-1 rounded-2xl bg-white px-4 py-3 text-center font-bold text-[#10251b]">
-            Navigacija
-          </a>
-          <button onClick={shareResult} className="flex-1 rounded-2xl border border-white/15 px-4 py-3 font-bold text-white hover:bg-white/10">
-            {shareCopied ? 'Kopirano ✓' : 'Deli'}
-          </button>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <a href={mapsUrl(item)} target="_blank" rel="noopener noreferrer" className="rounded-2xl bg-[#10251b] px-5 py-3 text-center font-black text-white">Navigacija</a>
+          <button onClick={shareResult} className="rounded-2xl bg-white px-5 py-3 font-black text-[#10251b] ring-1 ring-black/10">{shareCopied ? 'Kopirano ✓' : 'Deli'}</button>
         </div>
 
-        <div className="mt-4 text-xs leading-relaxed text-white/38">
-          Izračun je ocena. Google Maps lahko pokaže drugačen čas zaradi prometa ali prehoda meje.
-        </div>
+        <p className="mt-3 text-[11px] leading-relaxed text-[#8a9791]">Izračun je ocena. Google Maps lahko pokaže drugačen čas zaradi prometa ali prehoda meje.</p>
       </div>
     )
   }
 
-  function CompactResult({ item, label }: { item: Result; label?: string }) {
+  function ResultRow({ item, label }: { item: Result; label?: string }) {
     return (
-      <a href={mapsUrl(item)} target="_blank" rel="noopener noreferrer" className="block rounded-[24px] border border-white/10 bg-white/[0.06] p-4 text-white transition hover:bg-white/[0.09]">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-xs font-black ${brandBadgeClass(item.brand)}`}>
-              {brandShort(item.brand)}
+      <a href={mapsUrl(item)} target="_blank" rel="noopener noreferrer" className="block rounded-[22px] bg-white p-3.5 shadow-[0_10px_35px_rgba(16,37,27,.06)] ring-1 ring-black/5 transition hover:-translate-y-0.5 hover:shadow-[0_16px_45px_rgba(16,37,27,.10)]">
+        <div className="flex items-center gap-3">
+          <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-xs font-black ${brandBadgeClass(item.brand)}`}>{brandShort(item.brand)}</div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <div className="truncate font-black text-[#10251b]">{item.name}</div>
+              {label && <span className="shrink-0 rounded-full bg-[#eef5f0] px-2 py-0.5 text-[10px] font-bold text-[#607067]">{label}</span>}
             </div>
-            <div className="min-w-0">
-              <div className="truncate text-base font-bold sm:text-lg">
-                {item.name}
-                {item.is_preferred_brand && <span className="ml-2 rounded-full bg-[#b9fb6a]/20 px-2 py-1 text-[10px] text-[#b9fb6a]">preferirana</span>}
-              </div>
-              <div className="mt-1 truncate text-xs text-white/42">{label || item.address}</div>
-              <div className="mt-2 text-xl font-black text-[#b9fb6a]">{item.price.toFixed(3)} €/L</div>
-            </div>
+            <div className="mt-0.5 truncate text-xs text-[#6a7872]">{item.address}</div>
+            <div className="mt-1 text-xl font-black text-[#0f6b46]">{item.price.toFixed(3)} €/L</div>
           </div>
-          <div className="shrink-0 text-right">
-            <div className="text-sm font-bold text-white/85">{item.distance_km} km</div>
-            <div className="mt-1 text-xs text-white/42">~{item.estimated_drive_minutes} min</div>
-            <div className="mt-2 text-xs text-white/42">skupaj</div>
-            <div className="font-black text-[#b9fb6a]">{formatMoney(item.effective_total_cost)}</div>
+          <div className="text-right">
+            <div className="text-sm font-black text-[#10251b]">{item.distance_km} km</div>
+            <div className="text-xs text-[#6a7872]">~{item.estimated_drive_minutes} min</div>
+            <div className="mt-1 text-[10px] text-[#6a7872]">skupaj</div>
+            <div className="font-black text-[#0f6b46]">{formatEur(item.effective_total_cost)}</div>
           </div>
         </div>
       </a>
@@ -308,136 +285,128 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#06170f] text-white">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top_left,rgba(185,251,106,.13),transparent_28%),radial-gradient(circle_at_80%_0%,rgba(45,135,82,.18),transparent_30%)]" />
+    <main className="min-h-screen bg-[#f6f8f4] text-[#10251b]">
+      <div className="pointer-events-none fixed inset-0 -z-0 bg-[radial-gradient(circle_at_15%_10%,rgba(185,251,106,.35),transparent_28%),radial-gradient(circle_at_92%_15%,rgba(15,107,70,.14),transparent_30%)]" />
 
-      <section className="relative mx-auto max-w-6xl px-4 pb-10 pt-5 sm:px-6 sm:py-10">
-        <div className="grid gap-5 lg:grid-cols-[.95fr_1.05fr] lg:items-stretch">
-          <div className="rounded-[32px] border border-white/10 bg-[#0b2117]/92 p-5 shadow-[0_30px_100px_rgba(0,0,0,.34)] backdrop-blur sm:rounded-[38px] sm:p-7">
-            <div className="flex items-center justify-between gap-3">
+      <section className="relative z-10 mx-auto flex min-h-[100svh] max-w-6xl flex-col px-4 py-4 sm:px-5 lg:min-h-screen lg:py-6">
+        <div className="grid flex-1 items-stretch gap-4 lg:grid-cols-[.93fr_1.07fr]">
+          <div className="rounded-[30px] bg-white/88 p-5 shadow-[0_18px_65px_rgba(16,37,27,.08)] ring-1 ring-black/5 backdrop-blur sm:p-6 lg:p-7">
+            <div className="flex items-center justify-between gap-4">
               <div className="text-3xl font-black italic tracking-tight sm:text-4xl">
-                Tankaj<span className="text-[#b9fb6a]">.si</span>
+                Tankaj<span className="text-[#86d83a]">.si</span>
               </div>
-              <div className="rounded-full bg-[#b9fb6a]/18 px-4 py-2 text-sm font-bold text-[#b9fb6a]">BETA</div>
+              <div className="rounded-full bg-[#e9fbda] px-3 py-1 text-xs font-black text-[#0f6b46]">BETA</div>
             </div>
 
-            <div className="mt-6 flex items-center gap-2 text-base text-white/58 sm:text-lg">
-              <span className="text-[#b9fb6a]">⌖</span>
+            <div className="mt-5 flex items-center gap-2 text-sm font-medium text-[#607067]">
+              <span className="text-[#86d83a]">⌖</span>
               <span>Slovenija + Hrvaška</span>
             </div>
 
-            <h1 className="mt-8 text-[clamp(3.6rem,11vw,5.9rem)] font-black leading-[.95] tracking-[-.055em]">
+            <h1 className="mt-6 max-w-lg text-[48px] font-black leading-[.92] tracking-[-.055em] text-[#10251b] sm:text-[62px] lg:text-[72px] xl:text-[78px]">
               Ne tankaj več na pamet.
             </h1>
 
-            <p className="mt-6 max-w-2xl text-[1.15rem] leading-relaxed text-white/58 sm:text-xl">
+            <p className="mt-5 max-w-xl text-base leading-relaxed text-[#607067] sm:text-lg">
               Tankaj.si izračuna najboljšo izbiro glede na ceno goriva, razdaljo, strošek poti, čas in tvoje preference.
             </p>
 
-            <div id="kalkulator" className="mt-7 rounded-[30px] border border-white/10 bg-white/[0.06] p-4 sm:p-5">
+            <div id="kalkulator" className="mt-5 rounded-[28px] bg-[#f1f6f2] p-4 ring-1 ring-black/5 lg:p-5">
               <div className="grid gap-3 sm:grid-cols-2">
-                <SelectDark label="Gorivo" value={fuelType} onChange={setFuelType} options={FUEL_OPTIONS} />
-                <SelectDark label="Radius" value={String(radius)} onChange={(v) => setRadius(Number(v))} options={RADIUS_OPTIONS} />
+                <SelectLight label="Gorivo" value={fuelType} onChange={setFuelType} options={[["PETROL_95", "Bencin 95"], ["DIESEL", "Dizel"]]} />
+                <SelectLight label="Radius" value={String(radius)} onChange={(v) => setRadius(Number(v))} options={[["5", "5 km"], ["10", "10 km"], ["25", "25 km"], ["50", "50 km"], ["100", "100 km"], ["200", "200 km"]]} />
 
                 <label>
-                  <span className="mb-2 block text-sm font-medium text-white/52">Količina</span>
-                  <input value={amount} onChange={(e) => setAmount(Number(e.target.value))} type="number" className="h-[54px] w-full rounded-2xl border border-white/12 bg-[#0b2016] px-4 text-[17px] text-white outline-none ring-0 placeholder:text-white/30 focus:border-[#b9fb6a]/70" />
+                  <span className="mb-1.5 block text-xs font-semibold text-[#6a7872]">Količina</span>
+                  <input value={amount} onChange={(e) => setAmount(Number(e.target.value))} type="number" className="h-12 w-full rounded-2xl border border-black/8 bg-white px-4 text-[15px] font-semibold text-[#10251b] outline-none transition focus:border-[#86d83a] focus:ring-4 focus:ring-[#B9FB6A]/25" />
                 </label>
 
-                <SelectDark label="Prikaži znamke" value={brand} onChange={setBrand} options={BRANDS} />
-                <SelectDark label="Preferirana znamka" value={preferredBrand} onChange={setPreferredBrand} options={[['NONE', 'Brez preference'], ...BRANDS.filter(([v]) => v !== 'ALL')]} />
-                <SelectDark label="Način poti" value={tripMode} onChange={setTripMode} options={TRIP_OPTIONS} />
-                <SelectDark label="Razvrsti po" value={sortBy} onChange={setSortBy} options={SORT_OPTIONS} />
+                <SelectLight label="Prikaži znamke" value={brand} onChange={setBrand} options={BRANDS} />
+                <SelectLight label="Preferirana znamka" value={preferredBrand} onChange={setPreferredBrand} options={[["NONE", "Brez preference"], ...BRANDS.filter(([v]) => v !== 'ALL')]} />
+                <SelectLight label="Način poti" value={tripMode} onChange={setTripMode} options={[["return", "Grem samo tankat"], ["oneway", "Je spotoma / grem v to smer"]]} />
+                <SelectLight label="Razvrsti po" value={sortBy} onChange={setSortBy} options={[["smart", "Najboljša izbira"], ["total", "Najnižji skupni strošek"], ["price", "Najnižja cena €/L"], ["distance", "Najbližje"]]} />
 
-                <button onClick={search} disabled={loading} className="h-[58px] rounded-2xl bg-[#b9fb6a] px-5 text-[17px] font-black leading-tight text-[#10251b] shadow-[0_14px_34px_rgba(185,251,106,.2)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70 sm:mt-7">
+                <button onClick={search} disabled={loading} className="h-12 rounded-2xl bg-[#B9FB6A] px-5 text-[15px] font-black text-[#10251b] shadow-[0_12px_28px_rgba(124,214,55,.24)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70 sm:self-end">
                   {status === 'location' ? 'Pridobivam lokacijo ...' : status === 'routing' ? 'Računam izbiro ...' : 'Preveri najboljšo izbiro'}
                 </button>
               </div>
             </div>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-3">
-              <InfoDark title="Gorivo" text="Cena × količina." />
-              <InfoDark title="Pot" text="Vožnja do črpalke." />
-              <InfoDark title="Čas" text="Privzeto 6 €/h." />
+            <div className="mt-4 grid grid-cols-3 gap-2.5">
+              <InfoTile title="Gorivo" text="Cena × količina." />
+              <InfoTile title="Pot" text="Realna vožnja." />
+              <InfoTile title="Čas" text="Privzeto 6 €/h." />
             </div>
           </div>
 
-          <div className="rounded-[32px] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(185,251,106,.18),transparent_36%),linear-gradient(180deg,#11351f,#071a12)] p-5 shadow-[0_30px_100px_rgba(0,0,0,.34)] sm:rounded-[38px] sm:p-7">
-            {loading && (
-              <div className="rounded-[30px] border border-white/10 bg-white/[0.06] p-5">
-                <div className="text-sm text-white/55">{status === 'location' ? 'Pridobivam tvojo lokacijo ...' : 'Primerjam črpalke, cene in strošek poti ...'}</div>
-                <div className="mt-5 h-10 w-64 animate-pulse rounded-full bg-white/10" />
-                <div className="mt-6 space-y-3">
-                  <div className="h-44 animate-pulse rounded-3xl bg-white/10" />
-                  <div className="h-20 animate-pulse rounded-3xl bg-white/10" />
-                  <div className="h-20 animate-pulse rounded-3xl bg-white/10" />
+          <div className="rounded-[30px] bg-[#edf4ed] p-4 shadow-[0_18px_65px_rgba(16,37,27,.08)] ring-1 ring-black/5 sm:p-5 lg:flex lg:min-h-0 lg:flex-col lg:p-6">
+            {!searched && !loading && (
+              <div className="flex h-full min-h-[360px] flex-col justify-center rounded-[28px] bg-white p-6 ring-1 ring-black/5 lg:min-h-0">
+                <div className="text-xs font-bold uppercase tracking-[.18em] text-[#0f6b46]">Primer logike</div>
+                <h2 className="mt-3 max-w-lg text-3xl font-black tracking-tight text-[#10251b] sm:text-4xl">Najnižja cena na liter ni vedno najboljša izbira.</h2>
+                <div className="mt-6 grid gap-3">
+                  <ExampleLine label="Črpalka A" value="1.605 €/L · 5 km stran" />
+                  <ExampleLine label="Črpalka B" value="1.589 €/L · 28 km stran" />
+                  <div className="rounded-2xl bg-[#B9FB6A] p-4 text-[#10251b]">
+                    <div className="text-xs font-semibold opacity-70">Tankaj.si preveri razliko</div>
+                    <div className="mt-1 text-xl font-black">manj vožnje je lahko cenejše kot nižja cena</div>
+                  </div>
                 </div>
               </div>
             )}
 
-            {searched && !loading && status === 'done' && results.length === 0 && (
-              <div className="rounded-[30px] border border-white/10 bg-white/[0.06] p-6 text-white/70">
-                V izbranem radiusu trenutno ni zadetkov. Poskusi povečati radius ali prikazati vse znamke.
+            {loading && (
+              <div className="rounded-[28px] bg-white p-5 ring-1 ring-black/5">
+                <div className="text-sm font-semibold text-[#607067]">{status === 'location' ? 'Pridobivam tvojo lokacijo ...' : 'Primerjam črpalke, cene in strošek poti ...'}</div>
+                <div className="mt-5 h-10 w-64 animate-pulse rounded-full bg-black/10" />
+                <div className="mt-6 space-y-3">
+                  <div className="h-36 animate-pulse rounded-3xl bg-black/10" />
+                  <div className="h-20 animate-pulse rounded-3xl bg-black/10" />
+                  <div className="h-20 animate-pulse rounded-3xl bg-black/10" />
+                </div>
               </div>
             )}
 
             {searched && !loading && status === 'error' && (
-              <div className="rounded-[30px] border border-white/10 bg-white/[0.06] p-6 text-white/70">
-                Pri iskanju je prišlo do napake. Poskusi znova.
-              </div>
+              <div className="rounded-[28px] bg-white p-6 text-[#607067] ring-1 ring-black/5">Pri iskanju je prišlo do napake. Poskusi znova.</div>
             )}
 
-            {!searched && !loading && (
-              <div className="flex min-h-[520px] flex-col justify-center">
-                <div className="text-sm text-white/42">Primer logike</div>
-                <div className="mt-3 max-w-xl text-3xl font-black leading-tight tracking-tight sm:text-4xl">
-                  Najnižja cena na liter ni vedno najboljša izbira.
-                </div>
-                <div className="mt-7 space-y-3">
-                  <ExampleLine label="Črpalka A" value="1.605 €/L · 5 km stran" />
-                  <ExampleLine label="Črpalka B" value="1.589 €/L · 28 km stran" />
-                  <div className="rounded-3xl bg-[#b9fb6a] p-5 text-[#10251b]">
-                    <div className="text-sm opacity-70">Tankaj.si preveri razliko</div>
-                    <div className="mt-1 text-2xl font-black">manj vožnje je lahko cenejše kot nižja cena</div>
-                  </div>
-                </div>
-              </div>
+            {searched && !loading && status === 'done' && results.length === 0 && (
+              <div className="rounded-[28px] bg-white p-6 text-[#607067] ring-1 ring-black/5">V izbranem radiusu trenutno ni zadetkov. Poskusi povečati radius ali prikazati vse znamke.</div>
             )}
 
             {!loading && best && (
-              <>
-                <MainResultCard item={best} />
-                <div className="mt-7 text-2xl font-black tracking-tight">Druge odlične možnosti</div>
-                <div className="mt-4 space-y-3">
-                  {preferredPick && preferredPick.location_id !== best.location_id && <CompactResult item={preferredPick} label="Najboljša preferirana znamka" />}
-                  {crossBorder && crossBorder.location_id !== best.location_id && <CompactResult item={crossBorder} label="Najboljša izbira čez mejo" />}
-                  {nearest && nearest.location_id !== best.location_id && <CompactResult item={nearest} label="Najbližja možnost" />}
-                  {visibleResults.filter((item) => item.location_id !== best.location_id).map((item) => <CompactResult key={item.location_id} item={item} />)}
+              <div className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+                <HeroResultCard item={best} />
+
+                <div className="mt-4 flex items-center justify-between gap-3">
+                  <h3 className="text-xl font-black tracking-tight text-[#10251b]">Druge odlične možnosti</h3>
+                  {lastUpdated && <span className="text-xs font-medium text-[#6a7872]">Cene {lastUpdated}</span>}
                 </div>
 
-                {lastUpdated && <div className="mt-4 text-sm text-white/40">Cene so bile nazadnje posodobljene {lastUpdated}.</div>}
+                <div className="mt-3 grid gap-2.5 lg:min-h-0 lg:flex-1 lg:overflow-hidden">
+                  {featuredAlternatives.map(({ item, label }) => <ResultRow key={`${item.location_id}-${label || 'r'}`} item={item} label={label} />)}
+                </div>
 
                 {results.length > visibleCount && (
-                  <div className="mt-5 flex justify-center">
-                    <button onClick={() => setVisibleCount((v) => v + 5)} className="rounded-2xl border border-white/10 bg-white/[0.06] px-6 py-4 font-semibold text-white hover:bg-white/[0.09]">
-                      Naloži več rezultatov
-                    </button>
+                  <div className="mt-4 flex justify-center">
+                    <button onClick={() => setVisibleCount((v) => v + 4)} className="rounded-2xl bg-white px-6 py-3 font-black text-[#10251b] shadow-sm ring-1 ring-black/5 hover:bg-[#f8faf8]">Naloži več rezultatov</button>
                   </div>
                 )}
-              </>
+              </div>
             )}
           </div>
         </div>
 
-        <section className="mt-6 rounded-[32px] border border-white/10 bg-white/[0.04] p-5 text-white sm:mt-8 sm:rounded-[38px] sm:p-8">
-          <h2 className="text-3xl font-black tracking-tight">Kako deluje?</h2>
-          <p className="mt-4 max-w-4xl text-base leading-relaxed text-white/58 sm:text-lg">
+        <section className="mt-5 rounded-[30px] bg-white p-6 shadow-[0_18px_65px_rgba(16,37,27,.06)] ring-1 ring-black/5 sm:p-7 lg:mt-6">
+          <h2 className="text-3xl font-black tracking-tight text-[#10251b]">Kako deluje?</h2>
+          <p className="mt-3 max-w-4xl text-base leading-relaxed text-[#607067]">
             Tankaj.si ne primerja samo cene na liter, ampak izračuna približen skupni strošek tankanja. Upoštevamo ceno goriva, količino, ocenjeno realno vožnjo do črpalke, povprečno porabo vozila 7 L/100 km in ocenjeno vrednost časa 6 €/h.
           </p>
-          <div className="mt-6 grid gap-3 sm:grid-cols-3">
-            <InfoDark title="Formula" text="gorivo + pot + čas = končni strošek" />
-            <InfoDark title="Način poti" text="Računaš tja in nazaj ali kot spotoma." />
-            <InfoDark title="Cilj" text="Optimiziramo odločitev, ne samo cene." />
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            <InfoTile title="Formula" text="gorivo + pot + čas = končni strošek" />
+            <InfoTile title="Način poti" text="Računaš tja in nazaj ali kot spotoma." />
+            <InfoTile title="Cilj" text="Optimiziramo odločitev, ne samo cene." />
           </div>
         </section>
       </section>
@@ -447,32 +416,32 @@ export default function Home() {
 
 function MiniMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl bg-white/10 p-3">
-      <div className="text-[11px] uppercase tracking-[.12em] text-white/40">{label}</div>
-      <div className="mt-1 text-base font-black sm:text-lg">{value}</div>
+    <div className="rounded-2xl bg-white p-3 ring-1 ring-black/5">
+      <div className="text-[10px] font-black uppercase tracking-[.14em] text-[#8a9791]">{label}</div>
+      <div className="mt-1 font-black text-[#10251b]">{value}</div>
+    </div>
+  )
+}
+
+function InfoTile({ title, text }: { title: string; text: string }) {
+  return (
+    <div className="rounded-2xl bg-[#f3f8f4] p-4 ring-1 ring-black/5">
+      <div className="font-black text-[#10251b]">{title}</div>
+      <div className="mt-1 text-sm leading-relaxed text-[#607067]">{text}</div>
     </div>
   )
 }
 
 function ExampleLine({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-3xl bg-white/[0.075] p-5 shadow-inner">
-      <div className="text-sm text-white/42">{label}</div>
-      <div className="mt-1 text-2xl font-black text-[#b9fb6a]">{value}</div>
+    <div className="rounded-2xl bg-[#f3f8f4] p-4 ring-1 ring-black/5">
+      <div className="text-xs font-semibold text-[#6a7872]">{label}</div>
+      <div className="mt-1 text-xl font-black text-[#0f6b46]">{value}</div>
     </div>
   )
 }
 
-function InfoDark({ title, text }: { title: string; text: string }) {
-  return (
-    <div className="rounded-[22px] border border-white/10 bg-white/[0.06] p-4">
-      <div className="font-bold text-white">{title}</div>
-      <div className="mt-1 text-sm leading-relaxed text-white/48">{text}</div>
-    </div>
-  )
-}
-
-function SelectDark({
+function SelectLight({
   label,
   value,
   onChange,
@@ -485,21 +454,10 @@ function SelectDark({
 }) {
   return (
     <label>
-      <span className="mb-2 block text-sm font-medium text-white/52">{label}</span>
-      <div className="relative">
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="h-[54px] w-full appearance-none rounded-2xl border border-white/12 bg-[#0b2016] px-4 pr-11 text-[17px] text-white outline-none ring-0 focus:border-[#b9fb6a]/70"
-        >
-          {options.map(([value, label]) => (
-            <option key={value} value={value} className="bg-[#10251b] text-white">
-              {label}
-            </option>
-          ))}
-        </select>
-        <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-white/42">⌄</span>
-      </div>
+      <span className="mb-1.5 block text-xs font-semibold text-[#6a7872]">{label}</span>
+      <select value={value} onChange={(e) => onChange(e.target.value)} className="h-12 w-full appearance-none rounded-2xl border border-black/8 bg-white bg-[linear-gradient(45deg,transparent_50%,#607067_50%),linear-gradient(135deg,#607067_50%,transparent_50%)] bg-[length:5px_5px,5px_5px] bg-[position:calc(100%-18px)_20px,calc(100%-13px)_20px] bg-no-repeat px-4 pr-9 text-[15px] font-semibold text-[#10251b] outline-none transition focus:border-[#86d83a] focus:ring-4 focus:ring-[#B9FB6A]/25">
+        {options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+      </select>
     </label>
   )
 }
