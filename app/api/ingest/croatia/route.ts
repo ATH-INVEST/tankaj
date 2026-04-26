@@ -7,13 +7,6 @@ export const maxDuration = 60
 
 const MZOE_URL = 'https://mzoe-gor.hr/data.json'
 
-type CroatiaFuel = {
-  id: number
-  naziv?: string
-  ime?: string
-  name?: string
-}
-
 type CroatiaStation = {
   id: number
   naziv: string
@@ -23,11 +16,7 @@ type CroatiaStation = {
   long: string | number | null
   url?: string
   obveznik_id?: number
-  cjenici?: {
-    id: number
-    cijena: number
-    gorivo_id: number
-  }[]
+  cjenici?: { id: number; cijena: number; gorivo_id: number }[]
   radnaVremena?: any[]
 }
 
@@ -38,67 +27,46 @@ function isAuthorized(req: NextRequest) {
   return req.headers.get('authorization') === `Bearer ${cronSecret}`
 }
 
+function cleanText(value?: string | null) {
+  if (!value) return null
+  return value.replace(/\s+/g, ' ').trim()
+}
+
 function normalizeFuelName(name: string): string | null {
-  const value = name.toLowerCase()
+  const v = name.toLowerCase()
 
-  if (value.includes('adblue')) return null
-  if (value.includes('plavi')) return null
-  if (value.includes('lož')) return null
-  if (value.includes('loz')) return null
-
-  if (
-    value.includes('autoplin') ||
-    value.includes('lpg') ||
-    value.includes('ukapljeni naftni')
-  ) {
-    return 'LPG'
-  }
-
-  if (
-    value.includes('diesel') ||
-    value.includes('dizel') ||
-    value.includes('eurodizel') ||
-    value.includes('eurodiesel')
-  ) {
-    if (
-      value.includes('premium') ||
-      value.includes('class') ||
-      value.includes('maxx') ||
-      value.includes('q max') ||
-      value.includes('euroclass')
-    ) {
+  if (v.includes('adblue') || v.includes('plavi') || v.includes('lož') || v.includes('loz')) return null
+  if (v.includes('autoplin') || v.includes('lpg')) return 'LPG'
+  if (v.includes('diesel') || v.includes('dizel') || v.includes('eurodizel') || v.includes('eurodiesel')) {
+    if (v.includes('premium') || v.includes('class') || v.includes('maxx') || v.includes('q max')) {
       return 'PREMIUM_DIESEL'
     }
-
     return 'DIESEL'
   }
-
-  if (
-    value.includes('100') ||
-    value.includes('super 100') ||
-    value.includes('eurosuper 100')
-  ) {
-    return 'PETROL_100'
-  }
-
-  if (
-    value.includes('98') ||
-    value.includes('super 98') ||
-    value.includes('eurosuper 98')
-  ) {
-    return 'PETROL_98'
-  }
-
-  if (
-    value.includes('95') ||
-    value.includes('super') ||
-    value.includes('benzin') ||
-    value.includes('eurosuper')
-  ) {
-    return 'PETROL_95'
-  }
+  if (v.includes('100')) return 'PETROL_100'
+  if (v.includes('98')) return 'PETROL_98'
+  if (v.includes('95') || v.includes('super') || v.includes('benzin') || v.includes('eurosuper')) return 'PETROL_95'
 
   return null
+}
+
+function parseCoord(value: string | number | null) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return null
+  return n
+}
+
+function getCoords(station: CroatiaStation) {
+  // MZOE ima obratno poimenovanje:
+  // long = latitude, lat = longitude
+  const latitude = parseCoord(station.long)
+  const longitude = parseCoord(station.lat)
+
+  if (!latitude || !longitude) return null
+  if (latitude < 42 || latitude > 47) return null
+  if (longitude < 13 || longitude > 20) return null
+
+  return { lat: latitude, lng: longitude }
 }
 
 function normalizeBrand(station: CroatiaStation, companyName?: string | null) {
@@ -115,37 +83,10 @@ function normalizeBrand(station: CroatiaStation, companyName?: string | null) {
   return companyName?.split(' ')[0] || station.naziv.split(' ')[0] || null
 }
 
-function parseCoordinate(value: string | number | null) {
-  if (value === null || value === undefined) return null
-  const n = Number(value)
-  if (!Number.isFinite(n)) return null
-  return n
-}
-
-function getCoords(station: CroatiaStation) {
-  // MZOE uporablja zavajajoča imena:
-  // long = latitude, lat = longitude
-  const latitude = parseCoordinate(station.long)
-  const longitude = parseCoordinate(station.lat)
-
-  if (!latitude || !longitude) return null
-
-  if (latitude < 42 || latitude > 47) return null
-  if (longitude < 13 || longitude > 20) return null
-
-  return {
-    lat: latitude,
-    lng: longitude,
-  }
-}
-
-function cleanText(value?: string | null) {
-  if (!value) return null
-  return value.replace(/\s+/g, ' ').trim()
-}
-
-function getFuelName(fuel: CroatiaFuel | undefined) {
-  return cleanText(fuel?.naziv || fuel?.ime || fuel?.name || null)
+function chunk<T>(arr: T[], size: number) {
+  const chunks: T[][] = []
+  for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size))
+  return chunks
 }
 
 export async function GET(req: NextRequest) {
@@ -154,7 +95,8 @@ export async function GET(req: NextRequest) {
   }
 
   const startedAt = new Date().toISOString()
-  console.log('Tankaj.si HR INGEST RUN:', startedAt)
+  const { searchParams } = new URL(req.url)
+  const limit = Number(searchParams.get('limit') || 0)
 
   const syncRun = await supabase
     .from('source_sync_runs')
@@ -175,31 +117,35 @@ export async function GET(req: NextRequest) {
       cache: 'no-store',
     })
 
-    if (!res.ok) {
-      throw new Error(`mzoe-gor.hr returned ${res.status}`)
-    }
+    if (!res.ok) throw new Error(`mzoe-gor.hr returned ${res.status}`)
 
     const json = await res.json()
 
-    const stations: CroatiaStation[] = Array.isArray(json.postajas) ? json.postajas : []
-    const fuels: CroatiaFuel[] = Array.isArray(json.gorivos) ? json.gorivos : []
+    const stationsRaw: CroatiaStation[] = Array.isArray(json.postajas) ? json.postajas : []
+    const stations = limit > 0 ? stationsRaw.slice(0, limit) : stationsRaw
+    const fuels: any[] = Array.isArray(json.gorivos) ? json.gorivos : []
     const companies: any[] = Array.isArray(json.obvezniks) ? json.obvezniks : []
 
-    const fuelById = new Map<number, CroatiaFuel>()
+    const fuelById = new Map<number, string>()
     for (const fuel of fuels) {
-      fuelById.set(Number(fuel.id), fuel)
+      const name = cleanText(fuel.naziv || fuel.ime || fuel.name || null)
+      if (fuel.id && name) fuelById.set(Number(fuel.id), name)
     }
 
     const companyById = new Map<number, string>()
     for (const company of companies) {
       const name = cleanText(company.naziv || company.ime || company.name || company.tvrtka || null)
-      if (company.id && name) {
-        companyById.set(Number(company.id), name)
-      }
+      if (company.id && name) companyById.set(Number(company.id), name)
     }
 
-    let locationsUpserted = 0
-    let pricesInserted = 0
+    const locationRows: any[] = []
+    const pendingPrices: {
+      sourceId: string
+      fuelType: string
+      price: number
+      rawProductName: string
+    }[] = []
+
     let skippedNoCoords = 0
     let skippedNoPrices = 0
 
@@ -211,13 +157,6 @@ export async function GET(req: NextRequest) {
         continue
       }
 
-      const name = cleanText(station.naziv) || `HR station ${station.id}`
-      const address = cleanText(station.adresa)
-      const city = cleanText(station.mjesto)
-      const companyName = station.obveznik_id
-        ? companyById.get(Number(station.obveznik_id)) || null
-        : null
-
       const prices: {
         fuelType: string
         price: number
@@ -226,20 +165,17 @@ export async function GET(req: NextRequest) {
 
       for (const priceRow of station.cjenici || []) {
         const price = Number(priceRow.cijena)
+        if (!Number.isFinite(price) || price <= 0 || price > 5) continue
 
-        if (!Number.isFinite(price)) continue
-        if (price <= 0 || price > 5) continue
-
-        const fuel = fuelById.get(Number(priceRow.gorivo_id))
-        const fuelName = getFuelName(fuel) || `gorivo_id:${priceRow.gorivo_id}`
-        const fuelType = normalizeFuelName(fuelName)
+        const rawFuelName = fuelById.get(Number(priceRow.gorivo_id)) || `gorivo_id:${priceRow.gorivo_id}`
+        const fuelType = normalizeFuelName(rawFuelName)
 
         if (!fuelType) continue
 
         prices.push({
           fuelType,
           price: Number(price.toFixed(3)),
-          rawProductName: fuelName,
+          rawProductName: rawFuelName,
         })
       }
 
@@ -248,62 +184,77 @@ export async function GET(req: NextRequest) {
         continue
       }
 
+      const sourceId = String(station.id)
+      const companyName = station.obveznik_id ? companyById.get(Number(station.obveznik_id)) || null : null
       const brand = normalizeBrand(station, companyName)
 
-      const locationPayload = {
+      locationRows.push({
         type: 'fuel_station',
-        name,
+        name: cleanText(station.naziv) || `HR station ${station.id}`,
         brand,
         operator: companyName || brand,
-        address,
-        city,
+        address: cleanText(station.adresa),
+        city: cleanText(station.mjesto),
         country_code: 'HR',
         lat: coords.lat,
         lng: coords.lng,
         geo: `POINT(${coords.lng} ${coords.lat})`,
         source: 'mzoe-gor.hr',
-        source_id: String(station.id),
-        opening_hours: station.radnaVremena
-          ? {
-              raw: station.radnaVremena,
-            }
-          : null,
+        source_id: sourceId,
+        opening_hours: station.radnaVremena ? { raw: station.radnaVremena } : null,
         metadata: {
           url: station.url || null,
           obveznik_id: station.obveznik_id || null,
           company_name: companyName,
-          raw: station,
         },
-      }
+      })
 
-      const { data: location, error: locationError } = await supabase
-        .from('locations')
-        .upsert(locationPayload, {
-          onConflict: 'source,source_id',
+      for (const p of prices) {
+        pendingPrices.push({
+          sourceId,
+          ...p,
         })
-        .select('id')
-        .single()
+      }
+    }
 
-      if (locationError) throw locationError
+    const returnedLocations: { id: string; source_id: string }[] = []
 
-      locationsUpserted++
+    for (const part of chunk(locationRows, 200)) {
+      const { data, error } = await supabase
+        .from('locations')
+        .upsert(part, { onConflict: 'source,source_id' })
+        .select('id,source_id')
 
-      for (const item of prices) {
-        const { error: priceError } = await supabase.from('fuel_prices').insert({
-          location_id: location.id,
-          fuel_type: item.fuelType,
-          price: item.price,
+      if (error) throw error
+      returnedLocations.push(...(data || []))
+    }
+
+    const locationIdBySourceId = new Map<string, string>()
+    for (const loc of returnedLocations) {
+      locationIdBySourceId.set(String(loc.source_id), loc.id)
+    }
+
+    const priceRows = pendingPrices
+      .map((p) => {
+        const locationId = locationIdBySourceId.get(p.sourceId)
+        if (!locationId) return null
+
+        return {
+          location_id: locationId,
+          fuel_type: p.fuelType,
+          price: p.price,
           currency: 'EUR',
           source: 'mzoe-gor.hr',
           confidence: 'verified',
-          raw_product_name: item.rawProductName,
+          raw_product_name: p.rawProductName,
           source_updated_at: new Date().toISOString(),
-        })
+        }
+      })
+      .filter(Boolean)
 
-        if (priceError) throw priceError
-
-        pricesInserted++
-      }
+    for (const part of chunk(priceRows, 500)) {
+      const { error } = await supabase.from('fuel_prices').insert(part)
+      if (error) throw error
     }
 
     if (syncRun.data?.id) {
@@ -313,7 +264,7 @@ export async function GET(req: NextRequest) {
           status: 'success',
           finished_at: new Date().toISOString(),
           records_found: stations.length,
-          records_updated: locationsUpserted,
+          records_updated: returnedLocations.length,
         })
         .eq('id', syncRun.data.id)
     }
@@ -324,15 +275,14 @@ export async function GET(req: NextRequest) {
       startedAt,
       finishedAt: new Date().toISOString(),
       stationsFound: stations.length,
-      locationsUpserted,
-      pricesInserted,
+      locationsUpserted: returnedLocations.length,
+      pricesInserted: priceRows.length,
       skippedNoCoords,
       skippedNoPrices,
+      limitedTo: limit || null,
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : JSON.stringify(err, null, 2)
-
-    console.error('Tankaj.si HR INGEST ERROR:', message)
 
     if (syncRun.data?.id) {
       await supabase
