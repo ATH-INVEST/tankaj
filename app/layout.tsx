@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -13,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://www.tankaj.si"),
+  metadataBase: new URL("https://tankaj.si"),
   title: {
     default: "Tankaj.si – Ne tankaj več na pamet",
     template: "%s | Tankaj.si",
@@ -36,7 +37,7 @@ export const metadata: Metadata = {
     title: "Tankaj.si – Ne tankaj več na pamet",
     description:
       "Najnižja cena na liter ni vedno najboljša izbira. Izračunaj realni strošek poti.",
-    url: "https://www.tankaj.si",
+    url: "https://tankaj.si",
     siteName: "Tankaj.si",
     locale: "sl_SI",
     type: "website",
@@ -80,6 +81,24 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-white text-gray-900">
         {children}
+
+        {/* Google Analytics */}
+        <Script
+          src="https://www.googletagmanager.com/gtag/js?id=G-29HNWBQDL1"
+          strategy="afterInteractive"
+        />
+        <Script id="ga-script" strategy="afterInteractive">
+          {`
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            window.gtag = gtag;
+
+            gtag('js', new Date());
+            gtag('config', 'G-29HNWBQDL1', {
+              page_path: window.location.pathname,
+            });
+          `}
+        </Script>
       </body>
     </html>
   );
