@@ -30,15 +30,17 @@ type AnyResult = Result & {
   is_cross_border?: boolean
   is_outside_smart_limit?: boolean
   smart_warning?: string | null
+  recommendation_reason?: string | null
   mode?: string
 }
 
-const SMART_NEARBY_MAX_DISTANCE_KM = 20
-const SMART_NEARBY_MAX_DRIVE_MINUTES = 25
+const SMART_NEARBY_MAX_DISTANCE_KM = 12
+const SMART_NEARBY_MAX_DRIVE_MINUTES = 18
+const ROUTED_CANDIDATES_NEARBY = 48
 
-// Pomembno: pri sortiranju po ceni moramo routati tudi najcenejše kandidate,
-// sicer UI lahko pokaže zračno razdaljo namesto realne vožnje.
-const ROUTED_CANDIDATES_NEARBY = 44
+const MIN_ABSOLUTE_SAVING_TO_DRIVE_FURTHER = 1.25
+const REQUIRED_SAVING_PER_EXTRA_KM = 0.28
+const REQUIRED_SAVING_PER_EXTRA_MIN = 0.12
 
 function normalizeBrand(value?: string | null) {
   return value ? value.trim().toUpperCase() : ''
@@ -61,19 +63,13 @@ function round(value: number, decimals = 2) {
 
 function uniqueByLocation(rows: Result[]) {
   const map = new Map<string, Result>()
-
   for (const row of rows) {
-    if (!map.has(row.location_id)) {
-      map.set(row.location_id, row)
-    }
+    if (!map.has(row.location_id)) map.set(row.location_id, row)
   }
-
   return Array.from(map.values())
 }
 
 function routeFallbackDistance(distanceKm: number) {
-  // Fallback ni realna navigacija. Zračna razdalja je pogosto prekratka,
-  // zato jo konzervativno povečamo, da ne izgleda kot točna vožnja.
   return round(distanceKm * 1.35, 2)
 }
 
@@ -102,12 +98,11 @@ async function enrichWithRealRoutes(
         }
       } catch {
         const fallbackKm = routeFallbackDistance(n(r.distance_km))
-
         return {
           ...r,
           distance_km: fallbackKm,
           estimated_drive_minutes:
-            r.estimated_drive_minutes ?? Math.max(1, Math.round((fallbackKm / 55) * 60)),
+            r.estimated_drive_minutes ?? Math.max(1, Math.round((fallbackKm / 45) * 60)),
           route_source: 'air_distance_fallback_adjusted',
         }
       }
@@ -118,12 +113,11 @@ async function enrichWithRealRoutes(
     ...enriched,
     ...rows.slice(maxRoutes).map((r) => {
       const fallbackKm = routeFallbackDistance(n(r.distance_km))
-
       return {
         ...r,
         distance_km: fallbackKm,
         estimated_drive_minutes:
-          r.estimated_drive_minutes ?? Math.max(1, Math.round((fallbackKm / 55) * 60)),
+          r.estimated_drive_minutes ?? Math.max(1, Math.round((fallbackKm / 45) * 60)),
         route_source: 'air_distance_not_routed_adjusted',
         smart_warning: 'Razdalja je ocenjena, ker kandidat ni bil routan.',
       }
@@ -147,16 +141,13 @@ function sortScored(rows: AnyResult[], sortBy: string) {
       if (a.effective_total_cost !== b.effective_total_cost) {
         return n(a.effective_total_cost) - n(b.effective_total_cost)
       }
-
       return a.distance_km - b.distance_km
     }
 
     if (a.tankaj_score !== b.tankaj_score) return n(a.tankaj_score) - n(b.tankaj_score)
-
     if (a.effective_total_cost !== b.effective_total_cost) {
       return n(a.effective_total_cost) - n(b.effective_total_cost)
     }
-
     return a.distance_km - b.distance_km
   })
 }
@@ -164,44 +155,100 @@ function sortScored(rows: AnyResult[], sortBy: string) {
 function buildCandidatePool(rows: Result[], amount: number, sortBy: string) {
   const nearestCandidates = [...rows]
     .sort((a, b) => n(a.distance_km) - n(b.distance_km))
-    .slice(0, 34)
+    .slice(0, 36)
 
   const cheapestCandidates = [...rows]
     .sort((a, b) => {
       if (a.price !== b.price) return a.price - b.price
       return n(a.distance_km) - n(b.distance_km)
     })
-    .slice(0, 34)
+    .slice(0, 36)
 
   const basicSmartCandidates = [...rows]
     .sort((a, b) => {
-      const aBasic = n(a.price) * amount + n(a.distance_km) * 0.45
-      const bBasic = n(b.price) * amount + n(b.distance_km) * 0.45
+      const aBasic = n(a.price) * amount + n(a.distance_km) * 0.75
+      const bBasic = n(b.price) * amount + n(b.distance_km) * 0.75
       return aBasic - bBasic
     })
-    .slice(0, 44)
+    .slice(0, 48)
 
   if (sortBy === 'price') {
-    return uniqueByLocation([
-      ...cheapestCandidates,
-      ...nearestCandidates,
-      ...basicSmartCandidates,
-    ])
+    return uniqueByLocation([...cheapestCandidates, ...nearestCandidates, ...basicSmartCandidates])
   }
 
   if (sortBy === 'distance') {
-    return uniqueByLocation([
-      ...nearestCandidates,
-      ...cheapestCandidates,
-      ...basicSmartCandidates,
-    ])
+    return uniqueByLocation([...nearestCandidates, ...cheapestCandidates, ...basicSmartCandidates])
   }
 
-  return uniqueByLocation([
-    ...basicSmartCandidates,
-    ...nearestCandidates,
-    ...cheapestCandidates,
-  ])
+  return uniqueByLocation([...nearestCandidates, ...basicSmartCandidates, ...cheapestCandidates])
+}
+
+function isInsideNearbyLimit(r: AnyResult, radius: number) {
+  return (
+    r.distance_km <= Math.min(radius, SMART_NEARBY_MAX_DISTANCE_KM) &&
+    n(r.estimated_drive_minutes) <= SMART_NEARBY_MAX_DRIVE_MINUTES
+  )
+}
+
+function requiredSavingToRecommendFurther(candidate: AnyResult, nearest: AnyResult) {
+  const extraKm = Math.max(0, candidate.distance_km - nearest.distance_km)
+  const extraMin = Math.max(
+    0,
+    n(candidate.estimated_drive_minutes) - n(nearest.estimated_drive_minutes)
+  )
+
+  return Math.max(
+    MIN_ABSOLUTE_SAVING_TO_DRIVE_FURTHER,
+    extraKm * REQUIRED_SAVING_PER_EXTRA_KM + extraMin * REQUIRED_SAVING_PER_EXTRA_MIN
+  )
+}
+
+function chooseHumanBest(results: AnyResult[], sortBy: string) {
+  if (!results.length) return null
+
+  const nearest = [...results].sort((a, b) => a.distance_km - b.distance_km)[0]
+  const mathematicalBest = sortScored(results, sortBy)[0]
+
+  if (!nearest || !mathematicalBest) return mathematicalBest || nearest || null
+
+  if (nearest.location_id === mathematicalBest.location_id) {
+    return {
+      ...mathematicalBest,
+      recommendation_reason: 'Najbolj smiselna izbira v tvoji bližini.',
+    }
+  }
+
+  if (sortBy === 'distance') {
+    return {
+      ...nearest,
+      recommendation_reason: 'Najbližja smiselna možnost.',
+    }
+  }
+
+  const savingIfFurther =
+    n(nearest.effective_total_cost) - n(mathematicalBest.effective_total_cost)
+  const requiredSaving = requiredSavingToRecommendFurther(mathematicalBest, nearest)
+
+  if (savingIfFurther >= requiredSaving) {
+    return {
+      ...mathematicalBest,
+      recommendation_reason: `Dodatna pot je smiselna, ker prihrani približno ${round(
+        savingIfFurther,
+        2
+      ).toFixed(2)} €.`,
+    }
+  }
+
+  return {
+    ...nearest,
+    recommendation_reason:
+      savingIfFurther > 0
+        ? `Najcenejša opcija prihrani samo ${round(
+            savingIfFurther,
+            2
+          ).toFixed(2)} €, zato priporočamo bližjo izbiro.`
+        : 'Najbližja možnost je tudi najbolj smiselna izbira.',
+  }
 }
 
 export async function GET(req: Request) {
@@ -220,7 +267,6 @@ export async function GET(req: Request) {
   const mode = searchParams.get('mode') === 'route' ? 'route' : 'nearby'
   const sortBy = searchParams.get('sortBy') || 'smart'
 
-  // MVP: za "Okoli mene" računamo pot DO črpalke.
   const tripMultiplier = 1
 
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
@@ -262,7 +308,7 @@ export async function GET(req: Request) {
     const distanceKm = n(r.distance_km)
     const driveMinutes = n(
       r.estimated_drive_minutes,
-      Math.max(1, Math.round((distanceKm / 55) * 60))
+      Math.max(1, Math.round((distanceKm / 45) * 60))
     )
 
     const fuelCost = round(n(r.fuel_cost ?? r.total_cost, r.price * amount), 2)
@@ -272,11 +318,12 @@ export async function GET(req: Request) {
 
     const outsideSmartLimit =
       mode === 'nearby' &&
-      (distanceKm > SMART_NEARBY_MAX_DISTANCE_KM || driveMinutes > SMART_NEARBY_MAX_DRIVE_MINUTES)
+      (distanceKm > SMART_NEARBY_MAX_DISTANCE_KM ||
+        driveMinutes > SMART_NEARBY_MAX_DRIVE_MINUTES)
 
-    const distancePenalty =
+    const conveniencePenalty =
       mode === 'nearby'
-        ? Math.max(0, distanceKm - 10) * 0.55 + Math.max(0, driveMinutes - 15) * 0.28
+        ? Math.max(0, distanceKm - 2) * 0.48 + Math.max(0, driveMinutes - 4) * 0.18
         : 0
 
     return {
@@ -287,7 +334,7 @@ export async function GET(req: Request) {
       travel_fuel_cost: travelFuelCost,
       time_cost: timeCost,
       effective_total_cost: effectiveTotalCost,
-      tankaj_score: round(effectiveTotalCost + distancePenalty, 2),
+      tankaj_score: round(effectiveTotalCost + conveniencePenalty, 2),
       is_cross_border: userCountry ? Boolean(r.country_code && r.country_code !== userCountry) : false,
       is_outside_smart_limit: outsideSmartLimit,
       smart_warning: outsideSmartLimit
@@ -297,42 +344,34 @@ export async function GET(req: Request) {
     }
   }) as AnyResult[]
 
-  const sortedAll = sortScored(scored, sortBy)
+  const eligibleNearby =
+    mode === 'nearby' ? scored.filter((r) => isInsideNearbyLimit(r, radius)) : scored
 
-  const smartNearbyResults =
-    mode === 'nearby'
-      ? sortedAll.filter(
-          (r) =>
-            !r.is_outside_smart_limit &&
-            r.distance_km <= Math.min(radius, SMART_NEARBY_MAX_DISTANCE_KM)
-        )
-      : sortedAll
+  const fallbackNearby =
+    eligibleNearby.length > 0
+      ? eligibleNearby
+      : scored
+          .sort((a, b) => a.distance_km - b.distance_km)
+          .slice(0, 12)
+          .map((r) => ({
+            ...r,
+            smart_warning:
+              'V bližini ni dovolj dobrih zadetkov; prikazujemo najbližje možnosti.',
+          }))
 
-  const results =
-    smartNearbyResults.length > 0
-      ? smartNearbyResults
-      : sortScored(
-          scored
-            .sort((a, b) => a.distance_km - b.distance_km)
-            .slice(0, 12)
-            .map((r) => ({
-              ...r,
-              smart_warning: 'V bližini ni dovolj dobrih zadetkov; prikazujemo najbližje možnosti.',
-            })),
-          sortBy
-        )
+  const humanBest = chooseHumanBest(fallbackNearby, sortBy)
+  const sortedForList = sortScored(
+    fallbackNearby.filter((r) => r.location_id !== humanBest?.location_id),
+    sortBy
+  )
+
+  const results = humanBest ? [humanBest, ...sortedForList] : sortedForList
 
   const bestOverall = results[0] || null
-
-  const nearest =
-    [...scored]
-      .filter((r) => !r.is_outside_smart_limit)
-      .sort((a, b) => a.distance_km - b.distance_km)[0] ||
-    [...scored].sort((a, b) => a.distance_km - b.distance_km)[0] ||
-    null
+  const nearest = [...fallbackNearby].sort((a, b) => a.distance_km - b.distance_km)[0] || null
 
   const cheapestFuel =
-    [...results].sort((a, b) => {
+    [...fallbackNearby].sort((a, b) => {
       if (a.price !== b.price) return a.price - b.price
       return a.distance_km - b.distance_km
     })[0] || null
@@ -355,6 +394,7 @@ export async function GET(req: Request) {
       smart_nearby_max_distance_km: SMART_NEARBY_MAX_DISTANCE_KM,
       smart_nearby_max_drive_minutes: SMART_NEARBY_MAX_DRIVE_MINUTES,
       routed_candidates: ROUTED_CANDIDATES_NEARBY,
+      min_absolute_saving_to_drive_further: MIN_ABSOLUTE_SAVING_TO_DRIVE_FURTHER,
     },
     summary: {
       best_overall: bestOverall,
@@ -377,6 +417,6 @@ export async function GET(req: Request) {
     },
     results,
     all_considered_count: scored.length,
-    smart_results_count: smartNearbyResults.length,
+    smart_results_count: eligibleNearby.length,
   })
 }
