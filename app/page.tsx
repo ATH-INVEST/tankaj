@@ -420,6 +420,9 @@ export default function Home() {
                 <option value="SHELL">Shell</option>
                 <option value="OMV">OMV</option>
                 <option value="MAXEN">Maxen</option>
+<option value="INA">INA</option>
+<option value="TIFON">Tifon</option>
+<option value="CRODUX">Crodux</option>
               </select>
             </label>
 
@@ -438,6 +441,9 @@ export default function Home() {
                 <option value="SHELL">Shell</option>
                 <option value="OMV">OMV</option>
                 <option value="MAXEN">Maxen</option>
+<option value="INA">INA</option>
+<option value="TIFON">Tifon</option>
+<option value="CRODUX">Crodux</option>
               </select>
             </label>
 
