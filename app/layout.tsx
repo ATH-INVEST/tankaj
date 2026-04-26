@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL("https://tankaj.si"),
   title: {
-    default: "Tankaj.si – Ne tankaj več na pamet",
+    default: "Ne tankaj na pamet • Tankaj.si",
     template: "%s | Tankaj.si",
   },
   description:
@@ -34,7 +34,7 @@ export const metadata: Metadata = {
   creator: "Tankaj.si",
 
   openGraph: {
-    title: "Tankaj.si – Ne tankaj več na pamet",
+    title: "Ne tankaj na pamet • Tankaj.si",
     description:
       "Najnižja cena na liter ni vedno najboljša izbira. Izračunaj realni strošek poti.",
     url: "https://tankaj.si",
@@ -53,7 +53,7 @@ export const metadata: Metadata = {
 
   twitter: {
     card: "summary_large_image",
-    title: "Tankaj.si – Ne tankaj več na pamet",
+    title: "Ne tankaj na pamet • Tankaj.si",
     description:
       "Izračunaj, katera črpalka se ti dejansko splača.",
     images: ["/og-image.png"],

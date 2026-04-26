@@ -94,9 +94,8 @@ export default function Home() {
   const [radius, setRadius] = useState(50)
   const [amount, setAmount] = useState(50)
   const [brand, setBrand] = useState('ALL')
-  const [preferredBrand, setPreferredBrand] = useState('NONE')
-  const [tripMode, setTripMode] = useState('return')
   const [sortBy, setSortBy] = useState('smart')
+  const [appMode, setAppMode] = useState<'nearby' | 'route'>('nearby')
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [visibleCount, setVisibleCount] = useState(5)
 
@@ -111,7 +110,6 @@ export default function Home() {
   const best = summary?.best_overall || results?.[0] || null
   const nearest = summary?.nearest || null
   const crossBorder = summary?.best_cross_border || null
-  const preferredPick = summary?.preferred_best || null
 
   const visibleResults = useMemo(() => {
     const unique = new Map<string, Result>()
@@ -131,6 +129,11 @@ export default function Home() {
   }, [best])
 
   async function search() {
+    if (appMode === 'route') {
+      alert('Način “Na poti” dodamo v naslednjem koraku. Za zdaj uporabi “Okoli mene”.')
+      return
+    }
+
     const requestId = ++activeRequestId.current
     setSearched(true)
     setStatus('location')
@@ -153,7 +156,7 @@ export default function Home() {
           const lng = position.coords.longitude
 
           const res = await fetch(
-            `/api/search?lat=${lat}&lng=${lng}&type=${fuelType}&radius=${radius}&amount=${amount}&brand=${brand}&preferredBrand=${preferredBrand === 'NONE' ? '' : preferredBrand}&tripMode=${tripMode}&sortBy=${sortBy}`
+            `/api/search?lat=${lat}&lng=${lng}&type=${fuelType}&radius=${radius}&amount=${amount}&brand=${brand}&mode=${appMode}&sortBy=${sortBy}`
           )
 
           const json = await res.json()
@@ -213,12 +216,10 @@ export default function Home() {
             setAmount={setAmount}
             brand={brand}
             setBrand={setBrand}
-            preferredBrand={preferredBrand}
-            setPreferredBrand={setPreferredBrand}
-            tripMode={tripMode}
-            setTripMode={setTripMode}
             sortBy={sortBy}
             setSortBy={setSortBy}
+            appMode={appMode}
+            setAppMode={setAppMode}
             showAdvanced={showAdvanced}
             setShowAdvanced={setShowAdvanced}
             loading={loading}
@@ -230,7 +231,6 @@ export default function Home() {
             best={best}
             nearest={nearest}
             crossBorder={crossBorder}
-            preferredPick={preferredPick}
             visibleResults={visibleResults}
             resultsLength={results.length}
             visibleCount={visibleCount}
@@ -262,12 +262,10 @@ function HeroSearch({
   setAmount,
   brand,
   setBrand,
-  preferredBrand,
-  setPreferredBrand,
-  tripMode,
-  setTripMode,
   sortBy,
   setSortBy,
+  appMode,
+  setAppMode,
   showAdvanced,
   setShowAdvanced,
   loading,
@@ -291,14 +289,22 @@ function HeroSearch({
       </div>
 
       <h1 className="mt-6 max-w-xl text-[48px] font-black leading-[.93] tracking-[-.055em] sm:text-[64px] lg:text-[72px] xl:text-[78px]">
-        Ne tankaj več na pamet.
+        Ne tankaj na pamet.
       </h1>
 
       <p className="mt-5 max-w-lg text-base leading-relaxed text-white/60 sm:text-lg">
-        Tankaj.si izračuna najboljšo izbiro glede na ceno goriva, razdaljo, strošek poti, čas in tvoje preference.
+        Tankaj.si izračuna, kje se ti v bližini najbolj splača tankati glede na ceno goriva, vožnjo do črpalke, čas in tvoje preference.
       </p>
 
-      <div className="mt-6 rounded-[26px] border border-white/10 bg-[#123024]/72 p-3 sm:p-4 lg:p-5">
+      <ModeSwitch appMode={appMode} setAppMode={setAppMode} />
+
+      {appMode === 'route' && (
+        <div className="mt-4 rounded-[22px] border border-[#b9fb6a]/20 bg-[#b9fb6a]/10 p-4 text-sm leading-relaxed text-[#b9fb6a]">
+          <span className="font-black">Na poti</span> bo iskal črpalke med tvojo lokacijo in ciljem — glede na odstopanje od poti, ne samo razdaljo. To dodamo v naslednjem koraku.
+        </div>
+      )}
+
+      <div className="mt-4 rounded-[26px] border border-white/10 bg-[#123024]/72 p-3 sm:p-4 lg:p-5">
         <div className="grid gap-3 sm:grid-cols-2">
           <SelectDark label="Gorivo" value={fuelType} onChange={setFuelType} options={[['PETROL_95', 'Bencin 95'], ['DIESEL', 'Dizel']]} />
           <SelectDark label="Radius" value={String(radius)} onChange={(v) => setRadius(Number(v))} options={[['5', '5 km'], ['10', '10 km'], ['25', '25 km'], ['50', '50 km'], ['100', '100 km'], ['200', '200 km']]} />
@@ -318,8 +324,6 @@ function HeroSearch({
           {showAdvanced && (
             <>
               <SelectDark label="Znamke" value={brand} onChange={setBrand} options={BRANDS} />
-              <SelectDark label="Preferirana znamka" value={preferredBrand} onChange={setPreferredBrand} options={[['NONE', 'Brez preference'], ...BRANDS.filter(([v]) => v !== 'ALL')]} />
-              <SelectDark label="Način poti" value={tripMode} onChange={setTripMode} options={[['return', 'Grem samo tankat'], ['oneway', 'Je spotoma / grem v to smer']]} />
             </>
           )}
 
@@ -328,22 +332,22 @@ function HeroSearch({
             onClick={() => setShowAdvanced((v: boolean) => !v)}
             className="h-12 rounded-2xl border border-white/10 bg-white/[0.055] px-4 text-left text-sm font-bold text-white/78 transition hover:bg-white/[0.09]"
           >
-            {showAdvanced ? 'Osnovni prikaz' : 'Napredne nastavitve'}
+            {showAdvanced ? 'Skrij filtre' : 'Več filtrov'}
           </button>
 
           <button
             onClick={search}
-            disabled={loading}
+            disabled={loading || appMode === 'route'}
             className="h-12 rounded-2xl bg-[#b9fb6a] px-5 text-sm font-black text-[#071a12] shadow-[0_12px_30px_rgba(185,251,106,.22)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70 sm:col-span-2"
           >
-            {status === 'location' ? 'Pridobivam lokacijo ...' : status === 'routing' ? 'Računam izbiro ...' : 'Preveri najboljšo izbiro'}
+            {appMode === 'route' ? 'Na poti kmalu' : status === 'location' ? 'Pridobivam lokacijo ...' : status === 'routing' ? 'Računam izbiro ...' : 'Preveri najboljšo izbiro'}
           </button>
         </div>
       </div>
 
       <div className="mt-4 grid grid-cols-3 gap-2">
         <MiniInfo title="Gorivo" text="Cena × količina" />
-        <MiniInfo title="Pot" text="Realna vožnja" />
+        <MiniInfo title="Pot" text="Do črpalke" />
         <MiniInfo title="Čas" text="Privzeto 6 €/h" />
       </div>
     </div>
@@ -354,7 +358,6 @@ function ResultPanel({
   best,
   nearest,
   crossBorder,
-  preferredPick,
   visibleResults,
   resultsLength,
   visibleCount,
@@ -392,9 +395,6 @@ function ResultPanel({
           </div>
 
           <div className="mt-3 space-y-2.5 lg:space-y-3">
-            {preferredPick && preferredPick.location_id !== best.location_id && (
-              <CompactResult item={preferredPick} label="Preferirana znamka" mapsUrl={mapsUrl} />
-            )}
 
             {crossBorder && crossBorder.location_id !== best.location_id && (
               <CompactResult item={crossBorder} label="Čez mejo" mapsUrl={mapsUrl} />
@@ -500,7 +500,7 @@ function BestCard({ item, summary, mapsUrl, shareResult, shareCopied }: any) {
       </div>
 
       <p className="mt-3 text-[11px] leading-relaxed text-white/35">
-        Izračun je ocena. Google Maps lahko pokaže drugačen čas zaradi prometa ali prehoda meje.
+        Izračun je ocena poti do črpalke. Google Maps lahko pokaže drugačen čas zaradi prometa ali prehoda meje.
       </p>
     </div>
   )
@@ -614,17 +614,55 @@ function HowItWorks() {
       <h2 className="text-3xl font-black tracking-tight">Kako deluje?</h2>
       <p className="mt-4 max-w-4xl text-sm leading-relaxed text-white/60 sm:text-base">
         Tankaj.si ne primerja samo cene na liter, ampak izračuna približen skupni strošek tankanja.
-        Upoštevamo ceno goriva, količino, ocenjeno realno vožnjo do črpalke, povprečno porabo vozila 7 L/100 km in ocenjeno vrednost časa 6 €/h.
+        Upoštevamo ceno goriva, količino, ocenjeno vožnjo do črpalke, povprečno porabo vozila 7 L/100 km, ocenjen čas 6 €/h in pametno omejitev, da ne predlagamo nesmiselno oddaljenih črpalk.
       </p>
 
       <div className="mt-5 grid gap-3 md:grid-cols-3">
         <MiniInfo title="Formula" text="gorivo + pot + čas = končni strošek" />
-        <MiniInfo title="Način poti" text="Računaš tja in nazaj ali kot spotoma." />
-        <MiniInfo title="Cilj" text="Optimiziramo odločitev, ne samo cene." />
+        <MiniInfo title="Pot" text="Računamo vožnjo do izbrane črpalke." />
+        <MiniInfo title="Smart limit" text="Daleč stran ni dobra izbira samo zaradi nekaj centov." />
       </div>
     </section>
   )
 }
+
+
+function ModeSwitch({
+  appMode,
+  setAppMode,
+}: {
+  appMode: 'nearby' | 'route'
+  setAppMode: (value: 'nearby' | 'route') => void
+}) {
+  return (
+    <div className="mt-6 grid grid-cols-2 rounded-[22px] border border-white/10 bg-black/15 p-1">
+      <button
+        type="button"
+        onClick={() => setAppMode('nearby')}
+        className={`rounded-[18px] px-4 py-3 text-sm font-black transition ${
+          appMode === 'nearby'
+            ? 'bg-[#b9fb6a] text-[#071a12] shadow-[0_10px_24px_rgba(185,251,106,.18)]'
+            : 'text-white/55 hover:text-white'
+        }`}
+      >
+        Okoli mene
+      </button>
+
+      <button
+        type="button"
+        onClick={() => setAppMode('route')}
+        className={`rounded-[18px] px-4 py-3 text-sm font-black transition ${
+          appMode === 'route'
+            ? 'bg-[#b9fb6a] text-[#071a12] shadow-[0_10px_24px_rgba(185,251,106,.18)]'
+            : 'text-white/55 hover:text-white'
+        }`}
+      >
+        Na poti <span className="ml-1 text-[10px] opacity-70">kmalu</span>
+      </button>
+    </div>
+  )
+}
+
 
 function SelectDark({
   label,
