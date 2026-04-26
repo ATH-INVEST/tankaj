@@ -40,6 +40,14 @@ const BRANDS = [
   ['TIFON', 'Tifon'],
   ['CRODUX', 'Crodux'],
 ]
+const COUNTRIES = [
+  ['ALL', 'Vse države'],
+  ['SI', 'Slovenija'],
+  ['HR', 'Hrvaška'],
+  ['AT', 'Avstrija'],
+  ['IT', 'Italija'],
+  ['HU', 'Madžarska'],
+]
 
 const sortOptions: [SortBy, string][] = [
   ['smart', 'Priporočeno'],
@@ -135,6 +143,7 @@ export default function Home() {
   const [radius, setRadius] = useState(50)
   const [amount, setAmount] = useState(50)
   const [brand, setBrand] = useState('ALL')
+  const [country, setCountry] = useState('ALL')
   const [sortBy, setSortBy] = useState<SortBy>('smart')
   const [appMode, setAppMode] = useState<'nearby' | 'route'>('nearby')
   const [showAdvanced, setShowAdvanced] = useState(false)
@@ -207,9 +216,10 @@ async function loadMoreResults() {
       type: fuelType,
       radius: String(radius),
       amount: String(amount),
-      brand,
-      mode: appMode,
-      sortBy,
+     brand,
+country,
+mode: appMode,
+sortBy,
       batch: 'more',
       offset: String(nextOffset),
     })
@@ -261,8 +271,9 @@ async function loadMoreResults() {
         radius: String(radius),
         amount: String(amount),
         brand,
-        mode: appMode,
-        batch: 'initial',
+country,
+mode: appMode,
+batch: 'initial',
       })
 
       const res = await fetch(`/api/search?${params.toString()}`, {
@@ -287,7 +298,7 @@ const json = await res.json()
       setStatus('error')
     }
   },
-  [fuelType, radius, amount, brand, appMode]
+  [fuelType, radius, amount, brand, country, appMode]
 )
 
   const requestLocationAndSearch = useCallback(() => {
@@ -334,7 +345,7 @@ const json = await res.json()
     }, 450)
 
     return () => clearTimeout(timeout)
-  }, [coords, searched, fuelType, radius, amount, brand, appMode, runSearch])
+}, [coords, searched, fuelType, radius, amount, brand, country, appMode, runSearch])
 
   function mapsUrl(item: Result) {
     return `https://www.google.com/maps/dir/?api=1&destination=${item.lat},${item.lng}`
@@ -376,8 +387,6 @@ const json = await res.json()
             setRadius={setRadius}
             amount={amount}
             setAmount={setAmount}
-            brand={brand}
-            setBrand={setBrand}
             appMode={appMode}
             setAppMode={setAppMode}
             showAdvanced={showAdvanced}
@@ -391,6 +400,10 @@ const json = await res.json()
             setIncludePath={setIncludePath}
             includeTime={includeTime}
             setIncludeTime={setIncludeTime}
+            brand={brand}
+            setBrand={setBrand}
+            country={country}
+            setCountry={setCountry}
           />
 
           <ResultPanel
@@ -432,6 +445,8 @@ function HeroSearch({
   setAmount,
   brand,
   setBrand,
+  country,
+  setCountry,
   appMode,
   setAppMode,
   showAdvanced,
@@ -459,7 +474,7 @@ function HeroSearch({
 
       <div className="mt-5 flex items-center gap-2 text-sm text-white/58">
         <span className="text-[#b9fb6a]">⌖</span>
-        <span>Slovenija + Hrvaška</span>
+        <span>Slovenija, Hrvaška, Avstrija, Italija, Madžarska</span>
       </div>
 
       <h1 className="mt-6 max-w-xl text-[48px] font-black leading-[.93] tracking-[-.055em] sm:text-[64px] lg:text-[72px] xl:text-[78px]">
@@ -495,8 +510,11 @@ function HeroSearch({
           </label>
 
           {showAdvanced && (
-            <SelectDark label="Znamke" value={brand} onChange={setBrand} options={BRANDS} />
-          )}
+  <>
+    <SelectDark label="Znamke" value={brand} onChange={setBrand} options={BRANDS} />
+    <SelectDark label="Država" value={country} onChange={setCountry} options={COUNTRIES} />
+  </>
+)}
 
           <button
             type="button"

@@ -377,6 +377,7 @@ export async function GET(req: Request) {
   const brandFilter = normalizeBrand(
     searchParams.get('brand') || searchParams.get('brandFilter')
   )
+const countryFilter = searchParams.get('country') || 'ALL'
 
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return NextResponse.json(
@@ -416,6 +417,9 @@ export async function GET(req: Request) {
   if (brandFilter && brandFilter !== 'ALL') {
     rows = rows.filter((r) => normalizeBrand(r.brand) === brandFilter)
   }
+if (countryFilter && countryFilter !== 'ALL') {
+  rows = rows.filter((r) => r.country_code === countryFilter)
+}
 
   const candidatePool =
     batch === 'more'
@@ -457,6 +461,7 @@ export async function GET(req: Request) {
       routed_count: routed.length,
       valid_count: valid.length,
       results_count: results.length,
+      country_filter: countryFilter,
     },
   })
 }
