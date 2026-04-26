@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 type Result = {
   location_id: string
@@ -79,36 +79,55 @@ function formatKm(value?: number | null) {
   return `${Number(value || 0).toFixed(2).replace('.00', '')} km`
 }
 
-function sortClientResults(rows: Result[], sortBy: SortBy) {
+function countryLabel(code?: string | null) {
+  if (!code) return '—'
+  return code.toUpperCase()
+}
+
+function scoreItem(
+  item: Result,
+  includeFuel: boolean,
+  includePath: boolean,
+  includeTime: boolean
+) {
+  const fuel = includeFuel ? Number(item.fuel_cost || 0) : 0
+  const path = includePath ? Number(item.travel_fuel_cost || 0) : 0
+  const time = includeTime ? Number(item.time_cost || 0) : 0
+  return Number((fuel + path + time).toFixed(2))
+}
+
+function sortClientResults(
+  rows: Result[],
+  sortBy: SortBy,
+  includeFuel: boolean,
+  includePath: boolean,
+  includeTime: boolean
+) {
   return [...rows].sort((a, b) => {
+    const aScore = scoreItem(a, includeFuel, includePath, includeTime)
+    const bScore = scoreItem(b, includeFuel, includePath, includeTime)
+
     if (sortBy === 'price') {
       if (a.price !== b.price) return a.price - b.price
       if (a.distance_km !== b.distance_km) return a.distance_km - b.distance_km
-      return a.effective_total_cost - b.effective_total_cost
+      return aScore - bScore
     }
 
     if (sortBy === 'distance') {
       if (a.distance_km !== b.distance_km) return a.distance_km - b.distance_km
       if (a.price !== b.price) return a.price - b.price
-      return a.effective_total_cost - b.effective_total_cost
+      return aScore - bScore
     }
-
-    const aScore = a.tankaj_score ?? a.effective_total_cost
-    const bScore = b.tankaj_score ?? b.effective_total_cost
 
     if (aScore !== bScore) return aScore - bScore
-    if (a.effective_total_cost !== b.effective_total_cost) {
-      return a.effective_total_cost - b.effective_total_cost
-    }
-
     return a.distance_km - b.distance_km
   })
 }
 
 function reasonBySort(sortBy: SortBy) {
-  if (sortBy === 'price') return 'Najcenejša opcija v izbranem radiusu.'
-  if (sortBy === 'distance') return 'Najbližja črpalka po realni poti.'
-  return 'Najboljša kombinacija cene, poti in časa.'
+  if (sortBy === 'price') return 'Najcenejša cena na liter v izbranem radiusu.'
+  if (sortBy === 'distance') return 'Najbližja črpalka po realni cestni poti.'
+  return 'Najboljša kombinacija izbranih stroškov.'
 }
 
 export default function Home() {
@@ -121,28 +140,33 @@ export default function Home() {
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [showOthers, setShowOthers] = useState(false)
 
+  const [includeFuel, setIncludeFuel] = useState(true)
+  const [includePath, setIncludePath] = useState(true)
+  const [includeTime, setIncludeTime] = useState(true)
+
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null)
   const [results, setResults] = useState<Result[]>([])
   const [status, setStatus] = useState<SearchStatus>('idle')
   const [searched, setSearched] = useState(false)
   const [shareCopied, setShareCopied] = useState(false)
+
   const activeRequestId = useRef(0)
+  const didAutoLocate = useRef(false)
 
   const loading = status === 'location' || status === 'routing'
 
   const sortedResults = useMemo(() => {
-    return sortClientResults(results, sortBy)
-  }, [results, sortBy])
+    return sortClientResults(results, sortBy, includeFuel, includePath, includeTime)
+  }, [results, sortBy, includeFuel, includePath, includeTime])
 
   const best = sortedResults[0] || null
 
   const otherResults = useMemo(() => {
     const unique = new Map<string, Result>()
-
     for (const item of sortedResults) {
       if (best?.location_id === item.location_id) continue
       if (!unique.has(item.location_id)) unique.set(item.location_id, item)
     }
-
     return Array.from(unique.values())
   }, [sortedResults, best])
 
@@ -153,8 +177,10 @@ export default function Home() {
 
   const savingVsNearest = useMemo(() => {
     if (!best || !nearest || best.location_id === nearest.location_id) return 0
-    return Number((nearest.effective_total_cost - best.effective_total_cost).toFixed(2))
-  }, [best, nearest])
+    const nearestScore = scoreItem(nearest, includeFuel, includePath, includeTime)
+    const bestScore = scoreItem(best, includeFuel, includePath, includeTime)
+    return Number((nearestScore - bestScore).toFixed(2))
+  }, [best, nearest, includeFuel, includePath, includeTime])
 
   const lastUpdated = useMemo(() => {
     if (!best?.captured_at) return null
@@ -164,17 +190,46 @@ export default function Home() {
     return `pred ${Math.round(diffMin / 60)} h`
   }, [best])
 
-  async function search() {
+  const runSearch = useCallback(
+    async (point: { lat: number; lng: number }) => {
+      if (appMode === 'route') return
+
+      const requestId = ++activeRequestId.current
+      setSearched(true)
+      setShowOthers(false)
+      setStatus('routing')
+
+      try {
+        const params = new URLSearchParams({
+          lat: String(point.lat),
+          lng: String(point.lng),
+          type: fuelType,
+          radius: String(radius),
+          amount: String(amount),
+          brand,
+          mode: appMode,
+        })
+
+        const res = await fetch(`/api/search?${params.toString()}`)
+        const json = await res.json()
+
+        if (requestId !== activeRequestId.current) return
+
+        setResults(json.results || [])
+        setStatus('done')
+      } catch {
+        if (requestId !== activeRequestId.current) return
+        setStatus('error')
+      }
+    },
+    [fuelType, radius, amount, brand, appMode]
+  )
+
+  const requestLocationAndSearch = useCallback(() => {
     if (appMode === 'route') {
       alert('Način “Na poti” dodamo v naslednjem koraku. Za zdaj uporabi “Okoli mene”.')
       return
     }
-
-    const requestId = ++activeRequestId.current
-    setSearched(true)
-    setShowOthers(false)
-    setStatus('location')
-    setResults([])
 
     if (!navigator.geolocation) {
       alert('Tvoj brskalnik ne podpira zaznave lokacije.')
@@ -182,37 +237,41 @@ export default function Home() {
       return
     }
 
+    setStatus('location')
+
     navigator.geolocation.getCurrentPosition(
       async (position) => {
-        if (requestId !== activeRequestId.current) return
-        setStatus('routing')
-
-        try {
-          const lat = position.coords.latitude
-          const lng = position.coords.longitude
-
-          const res = await fetch(
-            `/api/search?lat=${lat}&lng=${lng}&type=${fuelType}&radius=${radius}&amount=${amount}&brand=${brand}&mode=${appMode}`
-          )
-
-          const json = await res.json()
-          if (requestId !== activeRequestId.current) return
-
-          setResults(json.results || [])
-          setStatus('done')
-        } catch {
-          if (requestId !== activeRequestId.current) return
-          setStatus('error')
+        const point = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
         }
+
+        setCoords(point)
+        await runSearch(point)
       },
       () => {
-        if (requestId !== activeRequestId.current) return
         alert('Lokacije ni bilo mogoče pridobiti. Dovoli dostop do lokacije in poskusi znova.')
         setStatus('error')
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
     )
-  }
+  }, [appMode, runSearch])
+
+  useEffect(() => {
+    if (didAutoLocate.current) return
+    didAutoLocate.current = true
+    requestLocationAndSearch()
+  }, [requestLocationAndSearch])
+
+  useEffect(() => {
+    if (!coords || !searched || appMode === 'route') return
+
+    const timeout = setTimeout(() => {
+      runSearch(coords)
+    }, 450)
+
+    return () => clearTimeout(timeout)
+  }, [coords, searched, fuelType, radius, amount, brand, appMode, runSearch])
 
   function mapsUrl(item: Result) {
     return `https://www.google.com/maps/dir/?api=1&destination=${item.lat},${item.lng}`
@@ -262,7 +321,13 @@ export default function Home() {
             setShowAdvanced={setShowAdvanced}
             loading={loading}
             status={status}
-            search={search}
+            search={requestLocationAndSearch}
+            includeFuel={includeFuel}
+            setIncludeFuel={setIncludeFuel}
+            includePath={includePath}
+            setIncludePath={setIncludePath}
+            includeTime={includeTime}
+            setIncludeTime={setIncludeTime}
           />
 
           <ResultPanel
@@ -280,6 +345,9 @@ export default function Home() {
             mapsUrl={mapsUrl}
             shareResult={shareResult}
             shareCopied={shareCopied}
+            includeFuel={includeFuel}
+            includePath={includePath}
+            includeTime={includeTime}
           />
         </div>
 
@@ -305,6 +373,12 @@ function HeroSearch({
   loading,
   status,
   search,
+  includeFuel,
+  setIncludeFuel,
+  includePath,
+  setIncludePath,
+  includeTime,
+  setIncludeTime,
 }: any) {
   return (
     <div className="rounded-[30px] border border-white/10 bg-white/[0.055] p-4 shadow-[0_25px_80px_rgba(0,0,0,.25)] backdrop-blur-2xl sm:p-6 lg:min-h-[720px] lg:p-8">
@@ -327,7 +401,7 @@ function HeroSearch({
       </h1>
 
       <p className="mt-5 max-w-lg text-base leading-relaxed text-white/60 sm:text-lg">
-        Izberi radij, gorivo in količino. Tankaj.si nato enkrat izračuna realne poti, ti pa lahko rezultate takoj razvrščaš brez ponovnega čakanja.
+        Odpri app, dovoli lokacijo in Tankaj.si sam izračuna najboljšo izbiro. Ko spremeniš radij, gorivo ali filtre, rezultat samodejno osvežimo.
       </p>
 
       <ModeSwitch appMode={appMode} setAppMode={setAppMode} />
@@ -349,6 +423,7 @@ function HeroSearch({
               value={amount}
               onChange={(e) => setAmount(Number(e.target.value))}
               type="number"
+              min={1}
               className="h-12 w-full rounded-2xl border border-white/10 bg-[#071a12] px-4 text-[15px] font-semibold text-white outline-none transition focus:border-[#b9fb6a]/70"
             />
           </label>
@@ -370,15 +445,15 @@ function HeroSearch({
             disabled={loading || appMode === 'route'}
             className="h-12 rounded-2xl bg-[#b9fb6a] px-5 text-sm font-black text-[#071a12] shadow-[0_12px_30px_rgba(185,251,106,.22)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70 sm:col-span-2"
           >
-            {appMode === 'route' ? 'Na poti kmalu' : status === 'location' ? 'Pridobivam lokacijo ...' : status === 'routing' ? 'Računam realne poti ...' : 'Preveri najboljšo izbiro'}
+            {appMode === 'route' ? 'Na poti kmalu' : status === 'location' ? 'Pridobivam lokacijo ...' : status === 'routing' ? 'Računam realne poti ...' : 'Osveži najboljšo izbiro'}
           </button>
         </div>
       </div>
 
       <div className="mt-4 grid grid-cols-3 gap-2">
-        <MiniInfo title="Gorivo" text="Cena × količina" />
-        <MiniInfo title="Pot" text="Realna vožnja" />
-        <MiniInfo title="Čas" text="Privzeto 12 €/h" />
+        <ToggleInfo title="Gorivo" text="Cena × količina" active={includeFuel} onClick={() => setIncludeFuel((v: boolean) => !v)} />
+        <ToggleInfo title="Pot" text="Realna vožnja" active={includePath} onClick={() => setIncludePath((v: boolean) => !v)} />
+        <ToggleInfo title="Čas" text="Privzeto 12 €/h" active={includeTime} onClick={() => setIncludeTime((v: boolean) => !v)} />
       </div>
     </div>
   )
@@ -399,6 +474,9 @@ function ResultPanel({
   mapsUrl,
   shareResult,
   shareCopied,
+  includeFuel,
+  includePath,
+  includeTime,
 }: any) {
   return (
     <div className="rounded-[30px] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(185,251,106,.18),transparent_32%),linear-gradient(180deg,rgba(15,48,34,.86),rgba(5,20,14,.88))] p-4 shadow-[0_25px_80px_rgba(0,0,0,.25)] backdrop-blur-2xl sm:p-6 lg:min-h-[720px] lg:p-8">
@@ -444,6 +522,9 @@ function ResultPanel({
             mapsUrl={mapsUrl}
             shareResult={shareResult}
             shareCopied={shareCopied}
+            includeFuel={includeFuel}
+            includePath={includePath}
+            includeTime={includeTime}
           />
 
           {otherResults.length > 0 && (
@@ -463,7 +544,14 @@ function ResultPanel({
               ) : (
                 <div className="mt-3 space-y-2.5 lg:space-y-3">
                   {otherResults.map((item: Result) => (
-                    <CompactResult key={item.location_id} item={item} mapsUrl={mapsUrl} />
+                    <CompactResult
+                      key={item.location_id}
+                      item={item}
+                      mapsUrl={mapsUrl}
+                      includeFuel={includeFuel}
+                      includePath={includePath}
+                      includeTime={includeTime}
+                    />
                   ))}
                 </div>
               )}
@@ -475,7 +563,18 @@ function ResultPanel({
   )
 }
 
-function BestCard({ item, savingVsNearest, mapsUrl, shareResult, shareCopied }: any) {
+function BestCard({
+  item,
+  savingVsNearest,
+  mapsUrl,
+  shareResult,
+  shareCopied,
+  includeFuel,
+  includePath,
+  includeTime,
+}: any) {
+  const displayTotal = scoreItem(item, includeFuel, includePath, includeTime)
+
   return (
     <div className="rounded-[28px] border border-[#b9fb6a]/35 bg-[#071a12]/65 p-4 shadow-[0_18px_60px_rgba(0,0,0,.24)] sm:p-5">
       <div className="flex items-start justify-between gap-3">
@@ -494,8 +593,8 @@ function BestCard({ item, savingVsNearest, mapsUrl, shareResult, shareCopied }: 
           )}
         </div>
 
-        <div className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-white/65">
-          {item.country_code || 'SI'}
+        <div className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-white/75">
+          {countryLabel(item.country_code)}
         </div>
       </div>
 
@@ -519,14 +618,14 @@ function BestCard({ item, savingVsNearest, mapsUrl, shareResult, shareCopied }: 
         </div>
 
         <div className="mt-4 grid grid-cols-3 gap-2">
-          <CostPill label="Gorivo" value={formatMoney(item.fuel_cost)} />
-          <CostPill label="Pot" value={formatMoney(item.travel_fuel_cost)} />
-          <CostPill label="Čas" value={formatMoney(item.time_cost)} />
+          <CostPill label="Gorivo" value={includeFuel ? formatMoney(item.fuel_cost) : '—'} active={includeFuel} />
+          <CostPill label="Pot" value={includePath ? formatMoney(item.travel_fuel_cost) : '—'} active={includePath} />
+          <CostPill label="Čas" value={includeTime ? formatMoney(item.time_cost) : '—'} active={includeTime} />
         </div>
 
         <div className="mt-3 rounded-2xl border border-[#b9fb6a]/70 bg-[#b9fb6a]/12 p-4 text-white shadow-[0_0_0_1px_rgba(185,251,106,.08),0_18px_46px_rgba(185,251,106,.10)]">
           <div className="text-xs font-black uppercase tracking-[.2em] text-[#b9fb6a]/85">Ocenjen skupni strošek</div>
-          <div className="mt-1 text-3xl font-black text-[#b9fb6a]">{formatMoney(item.effective_total_cost)}</div>
+          <div className="mt-1 text-3xl font-black text-[#b9fb6a]">{formatMoney(displayTotal)}</div>
         </div>
       </div>
 
@@ -537,18 +636,10 @@ function BestCard({ item, savingVsNearest, mapsUrl, shareResult, shareCopied }: 
       )}
 
       <div className="mt-4 grid grid-cols-2 gap-2">
-        <a
-          href={mapsUrl(item)}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="rounded-2xl bg-white px-4 py-3 text-center text-sm font-black text-[#071a12]"
-        >
+        <a href={mapsUrl(item)} target="_blank" rel="noopener noreferrer" className="rounded-2xl bg-white px-4 py-3 text-center text-sm font-black text-[#071a12]">
           Navigacija
         </a>
-        <button
-          onClick={shareResult}
-          className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-black text-white transition hover:bg-white/[0.08]"
-        >
+        <button onClick={shareResult} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-black text-white transition hover:bg-white/[0.08]">
           {shareCopied ? 'Kopirano ✓' : 'Deli'}
         </button>
       </div>
@@ -560,14 +651,23 @@ function BestCard({ item, savingVsNearest, mapsUrl, shareResult, shareCopied }: 
   )
 }
 
-function CompactResult({ item, mapsUrl }: { item: Result; mapsUrl: (item: Result) => string }) {
+function CompactResult({
+  item,
+  mapsUrl,
+  includeFuel,
+  includePath,
+  includeTime,
+}: {
+  item: Result
+  mapsUrl: (item: Result) => string
+  includeFuel: boolean
+  includePath: boolean
+  includeTime: boolean
+}) {
+  const displayTotal = scoreItem(item, includeFuel, includePath, includeTime)
+
   return (
-    <a
-      href={mapsUrl(item)}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="block rounded-[22px] border border-white/8 bg-white/[0.06] p-3 transition hover:bg-white/[0.09]"
-    >
+    <a href={mapsUrl(item)} target="_blank" rel="noopener noreferrer" className="block rounded-[22px] border border-white/8 bg-white/[0.06] p-3 transition hover:bg-white/[0.09]">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-xs font-black ${brandColor(item.brand)}`}>
@@ -576,7 +676,9 @@ function CompactResult({ item, mapsUrl }: { item: Result; mapsUrl: (item: Result
 
           <div className="min-w-0">
             <div className="truncate text-sm font-black text-white">{item.name}</div>
-            <div className="mt-0.5 truncate text-[11px] text-white/40">{item.address}</div>
+            <div className="mt-0.5 truncate text-[11px] text-white/40">
+              {countryLabel(item.country_code)} · {item.address}
+            </div>
             <div className="mt-1 text-lg font-black text-[#b9fb6a]">{item.price.toFixed(3)} €/L</div>
           </div>
         </div>
@@ -585,7 +687,7 @@ function CompactResult({ item, mapsUrl }: { item: Result; mapsUrl: (item: Result
           <div className="text-xs font-black text-white/80">{formatKm(item.distance_km)}</div>
           <div className="text-[11px] text-white/40">~{item.estimated_drive_minutes} min</div>
           <div className="mt-1 text-[10px] text-white/40">skupaj</div>
-          <div className="text-sm font-black text-[#b9fb6a]">{formatMoney(item.effective_total_cost)}</div>
+          <div className="text-sm font-black text-[#b9fb6a]">{formatMoney(displayTotal)}</div>
         </div>
       </div>
     </a>
@@ -595,25 +697,25 @@ function CompactResult({ item, mapsUrl }: { item: Result; mapsUrl: (item: Result
 function ExampleState() {
   return (
     <div className="flex h-full min-h-[520px] flex-col justify-center">
-      <div className="text-xs font-black uppercase tracking-[.28em] text-[#b9fb6a]">Primer logike</div>
+      <div className="text-xs font-black uppercase tracking-[.28em] text-[#b9fb6a]">Samodejni izračun</div>
       <h2 className="mt-3 max-w-xl text-4xl font-black leading-tight tracking-tight">
-        Najnižja cena na liter ni vedno najboljša izbira.
+        Dovoli lokacijo in rezultat se izračuna sam.
       </h2>
 
       <div className="mt-7 space-y-3">
         <div className="rounded-3xl bg-white/[0.07] p-4">
-          <div className="text-sm text-white/45">Črpalka A</div>
-          <div className="mt-1 text-2xl font-black text-[#b9fb6a]">1.605 €/L · 5 km stran</div>
+          <div className="text-sm text-white/45">1. Lokacija</div>
+          <div className="mt-1 text-2xl font-black text-[#b9fb6a]">najbližje realne poti</div>
         </div>
 
         <div className="rounded-3xl bg-white/[0.07] p-4">
-          <div className="text-sm text-white/45">Črpalka B</div>
-          <div className="mt-1 text-2xl font-black text-[#b9fb6a]">1.589 €/L · 28 km stran</div>
+          <div className="text-sm text-white/45">2. Parametri</div>
+          <div className="mt-1 text-2xl font-black text-[#b9fb6a]">gorivo, radij, količina</div>
         </div>
 
         <div className="rounded-3xl bg-[#b9fb6a] p-4 text-[#071a12]">
-          <div className="text-sm opacity-70">Tankaj.si preveri razliko</div>
-          <div className="mt-1 text-2xl font-black">manj vožnje je lahko cenejše kot nižja cena</div>
+          <div className="text-sm opacity-70">3. Rezultat</div>
+          <div className="mt-1 text-2xl font-black">ena najboljša izbira + alternative</div>
         </div>
       </div>
     </div>
@@ -637,19 +739,45 @@ function LoadingState({ status }: { status: SearchStatus }) {
 }
 
 function EmptyState({ text }: { text: string }) {
+  return <div className="rounded-[28px] border border-white/10 bg-white/[0.06] p-6 text-white/65">{text}</div>
+}
+
+function CostPill({ label, value, active = true }: { label: string; value: string; active?: boolean }) {
   return (
-    <div className="rounded-[28px] border border-white/10 bg-white/[0.06] p-6 text-white/65">
-      {text}
+    <div className={`rounded-2xl p-3 ${active ? 'bg-white/10' : 'bg-white/[0.035] opacity-45'}`}>
+      <div className="text-[10px] font-black uppercase tracking-[.18em] text-white/38">{label}</div>
+      <div className="mt-1 text-sm font-black">{value}</div>
     </div>
   )
 }
 
-function CostPill({ label, value }: { label: string; value: string }) {
+function ToggleInfo({
+  title,
+  text,
+  active,
+  onClick,
+}: {
+  title: string
+  text: string
+  active: boolean
+  onClick: () => void
+}) {
   return (
-    <div className="rounded-2xl bg-white/10 p-3">
-      <div className="text-[10px] font-black uppercase tracking-[.18em] text-white/38">{label}</div>
-      <div className="mt-1 text-sm font-black">{value}</div>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-2xl border p-3 text-left transition ${
+        active
+          ? 'border-[#b9fb6a]/35 bg-[#b9fb6a]/12'
+          : 'border-white/10 bg-white/[0.04] opacity-55'
+      }`}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-sm font-black text-white">{title}</div>
+        <div className={`h-4 w-4 rounded-full border ${active ? 'border-[#b9fb6a] bg-[#b9fb6a]' : 'border-white/25'}`} />
+      </div>
+      <div className="mt-1 text-xs text-white/45">{text}</div>
+    </button>
   )
 }
 
@@ -667,13 +795,13 @@ function HowItWorks() {
     <section className="mt-5 rounded-[30px] border border-white/10 bg-white/[0.055] p-5 backdrop-blur-2xl sm:p-7">
       <h2 className="text-3xl font-black tracking-tight">Kako deluje?</h2>
       <p className="mt-4 max-w-4xl text-sm leading-relaxed text-white/60 sm:text-base">
-        Tankaj.si ob prvem iskanju izračuna realne poti do smiselnih črpalk v izbranem radiju. Nato lahko rezultate takoj preklapljaš med priporočeno izbiro, najcenejšo ceno na liter in najbližjo črpalko — brez ponovnega čakanja.
+        Tankaj.si samodejno izračuna realne poti do črpalk v izbranem radiju. Nato lahko rezultat takoj razvrščaš po priporočilu, najnižji ceni ali najbližji poti. Uporabnik lahko sam določi, ali se pri skupnem strošku upoštevajo gorivo, pot in čas.
       </p>
 
       <div className="mt-5 grid gap-3 md:grid-cols-3">
         <MiniInfo title="Formula" text="gorivo + pot + čas" />
         <MiniInfo title="Radius" text="Vedno upoštevamo tvoj izbor" />
-        <MiniInfo title="Hitro preklapljanje" text="Razvrščanje brez novega API klica" />
+        <MiniInfo title="Samodejno" text="Osvežitev ob spremembi parametrov" />
       </div>
     </section>
   )
