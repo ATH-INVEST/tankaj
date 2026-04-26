@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { getDrivingDistance } from '@/lib/ors'
 
+type RouteSource = 'openrouteservice' | 'osrm'
+
 type Result = {
   location_id: string
   name: string
@@ -9,41 +11,46 @@ type Result = {
   address: string | null
   city: string | null
   country_code?: string | null
-  lat?: number
-  lng?: number
+  lat?: number | null
+  lng?: number | null
   distance_km: number
   estimated_drive_minutes?: number | null
   fuel_type: string
   price: number
-  total_cost?: number
-  fuel_cost?: number
-  effective_total_cost?: number
-  source?: string
-  captured_at?: string
+  total_cost?: number | null
+  fuel_cost?: number | null
+  effective_total_cost?: number | null
+  source?: string | null
+  captured_at?: string | null
 }
 
 type AnyResult = Result & {
-  air_distance_km?: number
-  route_source?: 'openrouteservice' | 'osrm'
-  is_real_route: boolean
+  lat: number
+  lng: number
+  air_distance_km: number
+  distance_km: number
+  estimated_drive_minutes: number
+  route_source: RouteSource
+  is_real_route: true
   travel_fuel_cost: number
   time_cost: number
   tankaj_score: number
-  is_cross_border?: boolean
-  is_outside_smart_limit?: boolean
-  smart_warning?: string | null
-  recommendation_reason?: string | null
-  mode?: string
+  is_cross_border: boolean
+  is_outside_smart_limit: boolean
+  smart_warning: string | null
+  recommendation_reason: string | null
+  mode: 'nearby' | 'route'
 }
 
 const SMART_NEARBY_MAX_DISTANCE_KM = 12
 const SMART_NEARBY_MAX_DRIVE_MINUTES = 18
 const ROUTED_CANDIDATES_NEARBY = 72
+const ROUTING_CONCURRENCY = 6
 
 const DEFAULT_TIME_VALUE_EUR_PER_HOUR = 12
 const DEFAULT_CONSUMPTION_L_PER_100KM = 7
 
-const MIN_ABSOLUTE_SAVING_TO_DRIVE_FURTHER = 1.50
+const MIN_ABSOLUTE_SAVING_TO_DRIVE_FURTHER = 1.5
 const REQUIRED_SAVING_PER_EXTRA_KM = 0.38
 const REQUIRED_SAVING_PER_EXTRA_MIN = 0.18
 
@@ -57,13 +64,17 @@ function inferUserCountry(lat: number, lng: number) {
   return null
 }
 
-function n(value: any, fallback = 0) {
+function n(value: unknown, fallback = 0) {
   const num = Number(value)
   return Number.isFinite(num) ? num : fallback
 }
 
 function round(value: number, decimals = 2) {
   return Number(value.toFixed(decimals))
+}
+
+function hasCoordinates(row: Result): row is Result & { lat: number; lng: number } {
+  return Number.isFinite(Number(row.lat)) && Number.isFinite(Number(row.lng))
 }
 
 function uniqueByLocation(rows: Result[]) {
@@ -86,8 +97,8 @@ function haversineKm(from: { lat: number; lng: number }, to: { lat: number; lng:
   const lat2 = (to.lat * Math.PI) / 180
 
   const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) * Math.sin(dLng / 2)
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2
 
   return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
@@ -105,9 +116,13 @@ function isSuspiciousRouteDistance(params: {
 
   if (routeKm < airKm * 0.98) return true
 
-  // Cross-border coastal cases: if returned route is almost the same as air distance,
-  // it is probably not a usable road route for this app.
-  if (userCountry && stationCountry && userCountry !== stationCountry && airKm < 15 && routeKm < airKm * 2.1) {
+  if (
+    userCountry &&
+    stationCountry &&
+    userCountry !== stationCountry &&
+    airKm < 15 &&
+    routeKm < airKm * 2.1
+  ) {
     return true
   }
 
@@ -118,27 +133,35 @@ async function getOsrmDrivingDistance(
   from: { lat: number; lng: number },
   to: { lat: number; lng: number }
 ) {
-  const url =
-    `https://router.project-osrm.org/route/v1/driving/` +
-    `${from.lng},${from.lat};${to.lng},${to.lat}?overview=false&alternatives=false&steps=false`
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 8000)
 
-  const res = await fetch(url, {
-    headers: { accept: 'application/json' },
-    cache: 'no-store',
-  })
+  try {
+    const url =
+      `https://router.project-osrm.org/route/v1/driving/` +
+      `${from.lng},${from.lat};${to.lng},${to.lat}?overview=false&alternatives=false&steps=false`
 
-  if (!res.ok) throw new Error(`OSRM failed with ${res.status}`)
+    const res = await fetch(url, {
+      headers: { accept: 'application/json' },
+      cache: 'no-store',
+      signal: controller.signal,
+    })
 
-  const json = await res.json()
-  const route = json?.routes?.[0]
+    if (!res.ok) throw new Error(`OSRM failed with ${res.status}`)
 
-  if (!route?.distance || !route?.duration) {
-    throw new Error('OSRM returned no route')
-  }
+    const json = await res.json()
+    const route = json?.routes?.[0]
 
-  return {
-    distance_km: route.distance / 1000,
-    duration_min: route.duration / 60,
+    if (!route?.distance || !route?.duration) {
+      throw new Error('OSRM returned no route')
+    }
+
+    return {
+      distance_km: route.distance / 1000,
+      duration_min: route.duration / 60,
+    }
+  } finally {
+    clearTimeout(timeout)
   }
 }
 
@@ -166,7 +189,7 @@ async function getBestRealRoute(
       }
     }
   } catch {
-    // continue with OSRM fallback
+    // fallback to OSRM
   }
 
   try {
@@ -188,10 +211,32 @@ async function getBestRealRoute(
       }
     }
   } catch {
-    // no real route
+    // no usable route
   }
 
   return null
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>
+) {
+  const results = new Array<R>(items.length)
+  let nextIndex = 0
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex++
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex)
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => worker())
+  )
+
+  return results
 }
 
 async function enrichWithRealRoutes(
@@ -200,72 +245,74 @@ async function enrichWithRealRoutes(
   userCountry: string | null,
   maxRoutes = ROUTED_CANDIDATES_NEARBY
 ) {
-  const candidates = rows.slice(0, maxRoutes)
+  const candidates = rows.slice(0, maxRoutes).filter(hasCoordinates)
 
-  const routed = await Promise.all(
-    candidates.map(async (r) => {
-      if (!r.lat || !r.lng) return null
+  const routed = await mapWithConcurrency(candidates, ROUTING_CONCURRENCY, async (r) => {
+    const to = { lat: Number(r.lat), lng: Number(r.lng) }
+    const airKm = round(haversineKm(user, to), 2)
 
-      const to = { lat: Number(r.lat), lng: Number(r.lng) }
-      const airKm = round(haversineKm(user, to), 2)
-
-      const realRoute = await getBestRealRoute(user, to, {
-        userCountry,
-        stationCountry: r.country_code,
-        airKm,
-      })
-
-      if (!realRoute) return null
-
-      return {
-        ...r,
-        air_distance_km: airKm,
-        distance_km: realRoute.distance_km,
-        estimated_drive_minutes: realRoute.duration_min,
-        route_source: realRoute.route_source,
-        is_real_route: true,
-      }
+    const realRoute = await getBestRealRoute(user, to, {
+      userCountry,
+      stationCountry: r.country_code,
+      airKm,
     })
-  )
 
-  return routed.filter(Boolean) as Array<Result & {
-    air_distance_km: number
-    distance_km: number
-    estimated_drive_minutes: number
-    route_source: 'openrouteservice' | 'osrm'
-    is_real_route: true
-  }>
+    if (!realRoute) return null
+
+    return {
+      ...r,
+      lat: to.lat,
+      lng: to.lng,
+      air_distance_km: airKm,
+      distance_km: realRoute.distance_km,
+      estimated_drive_minutes: realRoute.duration_min,
+      route_source: realRoute.route_source,
+      is_real_route: true as const,
+    }
+  })
+
+  return routed.filter(Boolean) as Array<
+    Result & {
+      lat: number
+      lng: number
+      air_distance_km: number
+      distance_km: number
+      estimated_drive_minutes: number
+      route_source: RouteSource
+      is_real_route: true
+    }
+  >
 }
 
 function buildCandidatePool(rows: Result[], amount: number, sortBy: string) {
   const nearestCandidates = [...rows]
-    .sort((a, b) => n(a.distance_km) - n(b.distance_km))
+    .sort((a, b) => n(a.distance_km, Number.POSITIVE_INFINITY) - n(b.distance_km, Number.POSITIVE_INFINITY))
     .slice(0, 56)
 
   const cheapestCandidates = [...rows]
     .sort((a, b) => {
       if (a.price !== b.price) return a.price - b.price
-      return n(a.distance_km) - n(b.distance_km)
+      return n(a.distance_km, Number.POSITIVE_INFINITY) - n(b.distance_km, Number.POSITIVE_INFINITY)
     })
     .slice(0, 56)
 
-  const basicSmartCandidates = [...rows]
+  const smartCandidates = [...rows]
     .sort((a, b) => {
-      const aBasic = n(a.price) * amount + n(a.distance_km) * 1.25
-      const bBasic = n(b.price) * amount + n(b.distance_km) * 1.25
+      const aBasic = n(a.price) * amount + n(a.distance_km, 999) * 1.25
+      const bBasic = n(b.price) * amount + n(b.distance_km, 999) * 1.25
       return aBasic - bBasic
     })
     .slice(0, 72)
 
   if (sortBy === 'price') {
-    return uniqueByLocation([...cheapestCandidates, ...nearestCandidates, ...basicSmartCandidates])
+    return uniqueByLocation([...cheapestCandidates, ...nearestCandidates, ...smartCandidates])
   }
 
   if (sortBy === 'distance') {
-    return uniqueByLocation([...nearestCandidates, ...cheapestCandidates, ...basicSmartCandidates])
+    return uniqueByLocation([...nearestCandidates, ...cheapestCandidates, ...smartCandidates])
   }
 
-  return uniqueByLocation([...nearestCandidates, ...basicSmartCandidates, ...cheapestCandidates])
+  return uniqueByLocation([...nearestCandidates, ...smartCandidates, ...cheapestCandidates])
 }
 
 function scoreRows(
@@ -275,24 +322,24 @@ function scoreRows(
     consumption: number
     timeValue: number
     userCountry: string | null
-    mode: string
+    mode: 'nearby' | 'route'
   }
 ) {
   const { amount, consumption, timeValue, userCountry, mode } = params
-  const tripMultiplier = 1
 
   return rows.map((r) => {
-    const distanceKm = n(r.distance_km)
-    const driveMinutes = n(r.estimated_drive_minutes)
+    const distanceKm = round(n(r.distance_km), 2)
+    const driveMinutes = Math.max(1, Math.round(n(r.estimated_drive_minutes)))
 
     const fuelCost = round(n(r.fuel_cost ?? r.total_cost, r.price * amount), 2)
-    const travelFuelCost = round(((distanceKm * tripMultiplier) * consumption / 100) * n(r.price), 2)
+    const travelFuelCost = round(((distanceKm * consumption) / 100) * n(r.price), 2)
     const timeCost = round((driveMinutes / 60) * timeValue, 2)
     const effectiveTotalCost = round(fuelCost + travelFuelCost + timeCost, 2)
 
     const outsideSmartLimit =
       mode === 'nearby' &&
-      (distanceKm > SMART_NEARBY_MAX_DISTANCE_KM || driveMinutes > SMART_NEARBY_MAX_DRIVE_MINUTES)
+      (distanceKm > SMART_NEARBY_MAX_DISTANCE_KM ||
+        driveMinutes > SMART_NEARBY_MAX_DRIVE_MINUTES)
 
     const conveniencePenalty =
       mode === 'nearby'
@@ -301,8 +348,8 @@ function scoreRows(
 
     return {
       ...r,
-      distance_km: round(distanceKm, 2),
-      estimated_drive_minutes: Math.round(driveMinutes),
+      distance_km: distanceKm,
+      estimated_drive_minutes: driveMinutes,
       fuel_cost: fuelCost,
       travel_fuel_cost: travelFuelCost,
       time_cost: timeCost,
@@ -313,41 +360,42 @@ function scoreRows(
       smart_warning: outsideSmartLimit
         ? 'Izven smart limita. Smiselno predvsem, če si že na poti v to smer.'
         : null,
+      recommendation_reason: null,
       mode,
-    } as AnyResult
+    } satisfies AnyResult
   })
 }
 
 function sortBySelectedFilter(rows: AnyResult[], sortBy: string) {
   return [...rows].sort((a, b) => {
+    const aDistance = a.distance_km ?? Number.POSITIVE_INFINITY
+    const bDistance = b.distance_km ?? Number.POSITIVE_INFINITY
+    const aTotal = a.effective_total_cost ?? Number.POSITIVE_INFINITY
+    const bTotal = b.effective_total_cost ?? Number.POSITIVE_INFINITY
+    const aScore = a.tankaj_score ?? Number.POSITIVE_INFINITY
+    const bScore = b.tankaj_score ?? Number.POSITIVE_INFINITY
+
     if (sortBy === 'price') {
       if (a.price !== b.price) return a.price - b.price
-      return a.distance_km - b.distance_km
+      if (aDistance !== bDistance) return aDistance - bDistance
+      return aTotal - bTotal
     }
 
     if (sortBy === 'distance') {
-      if (a.distance_km !== b.distance_km) return a.distance_km - b.distance_km
-      return a.price - b.price
+      if (aDistance !== bDistance) return aDistance - bDistance
+      if (a.price !== b.price) return a.price - b.price
+      return aTotal - bTotal
     }
 
-    if (a.tankaj_score !== b.tankaj_score) return a.tankaj_score - b.tankaj_score
-    const aTotal = a.effective_total_cost ?? Number.POSITIVE_INFINITY
-const bTotal = b.effective_total_cost ?? Number.POSITIVE_INFINITY
-
-if (aTotal !== bTotal) {
-  return aTotal - bTotal
-}
-
-return (a.distance_km ?? Number.POSITIVE_INFINITY) - (b.distance_km ?? Number.POSITIVE_INFINITY)
+    if (aScore !== bScore) return aScore - bScore
+    if (aTotal !== bTotal) return aTotal - bTotal
+    return aDistance - bDistance
   })
 }
 
 function requiredSavingToRecommendFurther(candidate: AnyResult, nearest: AnyResult) {
   const extraKm = Math.max(0, candidate.distance_km - nearest.distance_km)
-  const extraMin = Math.max(
-    0,
-    n(candidate.estimated_drive_minutes) - n(nearest.estimated_drive_minutes)
-  )
+  const extraMin = Math.max(0, candidate.estimated_drive_minutes - nearest.estimated_drive_minutes)
 
   return Math.max(
     MIN_ABSOLUTE_SAVING_TO_DRIVE_FURTHER,
@@ -359,17 +407,20 @@ function pickWinner(rows: AnyResult[], sortBy: string, radius: number) {
   const insideRadius = rows.filter((r) => r.distance_km <= radius)
 
   if (!insideRadius.length) {
-    const nearestAny = [...rows].sort((a, b) => a.distance_km - b.distance_km)[0]
+    const nearestAny = sortBySelectedFilter(rows, 'distance')[0]
+
     return nearestAny
       ? {
           ...nearestAny,
-          recommendation_reason: 'V izbranem radiusu ni realno izračunanih poti; prikazujemo najbližjo realno možnost.',
+          recommendation_reason:
+            'V izbranem radiusu ni realno izračunanih poti; prikazujemo najbližjo realno možnost.',
         }
       : null
   }
 
   if (sortBy === 'price') {
     const winner = sortBySelectedFilter(insideRadius, 'price')[0]
+
     return winner
       ? {
           ...winner,
@@ -380,6 +431,7 @@ function pickWinner(rows: AnyResult[], sortBy: string, radius: number) {
 
   if (sortBy === 'distance') {
     const winner = sortBySelectedFilter(insideRadius, 'distance')[0]
+
     return winner
       ? {
           ...winner,
@@ -391,17 +443,20 @@ function pickWinner(rows: AnyResult[], sortBy: string, radius: number) {
   const smartPool = insideRadius.filter(
     (r) =>
       r.distance_km <= Math.min(radius, SMART_NEARBY_MAX_DISTANCE_KM) &&
-      n(r.estimated_drive_minutes) <= SMART_NEARBY_MAX_DRIVE_MINUTES
+      r.estimated_drive_minutes <= SMART_NEARBY_MAX_DRIVE_MINUTES
   )
 
   const usablePool = smartPool.length ? smartPool : insideRadius
+
   const nearest = sortBySelectedFilter(usablePool, 'distance')[0]
   const mathematicalBest = sortBySelectedFilter(usablePool, 'smart')[0]
 
   if (!nearest || !mathematicalBest) return mathematicalBest || nearest || null
 
-  const savingIfFurther =
-    n(nearest.effective_total_cost) - n(mathematicalBest.effective_total_cost)
+  const savingIfFurther = round(
+    Number(nearest.effective_total_cost) - Number(mathematicalBest.effective_total_cost),
+    2
+  )
 
   const requiredSaving = requiredSavingToRecommendFurther(mathematicalBest, nearest)
 
@@ -411,7 +466,7 @@ function pickWinner(rows: AnyResult[], sortBy: string, radius: number) {
       recommendation_reason:
         nearest.location_id === mathematicalBest.location_id
           ? 'Najbolj smiselna izbira v tvoji bližini.'
-          : `Dodatna pot je smiselna, ker prihrani približno ${round(savingIfFurther, 2).toFixed(2)} €.`,
+          : `Dodatna pot je smiselna, ker prihrani približno ${savingIfFurther.toFixed(2)} €.`,
     }
   }
 
@@ -419,7 +474,7 @@ function pickWinner(rows: AnyResult[], sortBy: string, radius: number) {
     ...nearest,
     recommendation_reason:
       savingIfFurther > 0
-        ? `Cenejša možnost prihrani samo ${round(savingIfFurther, 2).toFixed(
+        ? `Cenejša možnost prihrani samo ${savingIfFurther.toFixed(
             2
           )} €, zato priporočamo bližjo izbiro.`
         : 'Najbližja možnost je tudi najbolj smiselna izbira.',
@@ -429,7 +484,21 @@ function pickWinner(rows: AnyResult[], sortBy: string, radius: number) {
 function reasonForListItem(item: AnyResult, sortBy: string) {
   if (sortBy === 'price') return 'Naslednja možnost po ceni na liter.'
   if (sortBy === 'distance') return 'Naslednja najbližja realna možnost.'
+  if (item.is_outside_smart_limit) return 'Dobra možnost, vendar izven pametnega limita.'
   return 'Dobra alternativa glede na ceno, pot in čas.'
+}
+
+function buildFallbackResults(rows: Result[], radius: number, winnerId?: string) {
+  return rows
+    .filter((r) => r.location_id !== winnerId)
+    .filter((r) => n(r.distance_km, Number.POSITIVE_INFINITY) <= radius)
+    .slice(0, 12)
+    .map((r) => ({
+      ...r,
+      is_real_route: false,
+      recommendation_reason:
+        'Prikazano samo kot dodatna možnost, ker realna cestna pot ni bila izračunana.',
+    }))
 }
 
 export async function GET(req: Request) {
@@ -441,17 +510,34 @@ export async function GET(req: Request) {
   const type = searchParams.get('type') || 'PETROL_95'
   const amount = Number(searchParams.get('amount') || 50)
 
-  const consumption = Number(searchParams.get('consumption') || DEFAULT_CONSUMPTION_L_PER_100KM)
-  const timeValue = Number(searchParams.get('timeValue') || DEFAULT_TIME_VALUE_EUR_PER_HOUR)
+  const consumption = Number(
+    searchParams.get('consumption') || DEFAULT_CONSUMPTION_L_PER_100KM
+  )
+
+  const timeValue = Number(
+    searchParams.get('timeValue') || DEFAULT_TIME_VALUE_EUR_PER_HOUR
+  )
 
   const brandFilter = normalizeBrand(searchParams.get('brand') || searchParams.get('brandFilter'))
-  const mode = searchParams.get('mode') === 'route' ? 'route' : 'nearby'
+
+  const mode: 'nearby' | 'route' = searchParams.get('mode') === 'route' ? 'route' : 'nearby'
+
   const requestedSortBy = searchParams.get('sortBy') || 'smart'
-  const sortBy = requestedSortBy === 'price' || requestedSortBy === 'distance' ? requestedSortBy : 'smart'
+  const sortBy =
+    requestedSortBy === 'price' || requestedSortBy === 'distance'
+      ? requestedSortBy
+      : 'smart'
 
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return NextResponse.json(
       { success: false, error: 'Missing or invalid lat/lng' },
+      { status: 400 }
+    )
+  }
+
+  if (!Number.isFinite(radius) || radius <= 0) {
+    return NextResponse.json(
+      { success: false, error: 'Missing or invalid radius' },
       { status: 400 }
     )
   }
@@ -475,13 +561,14 @@ export async function GET(req: Request) {
 
   let rows = ((data || []) as Result[])
     .filter((r) => Number.isFinite(Number(r.price)))
-    .filter((r) => r.lat && r.lng)
+    .filter(hasCoordinates)
 
   if (brandFilter && brandFilter !== 'ALL') {
     rows = rows.filter((r) => normalizeBrand(r.brand) === brandFilter)
   }
 
   const candidatePool = buildCandidatePool(rows, amount, sortBy)
+
   const routedRows = await enrichWithRealRoutes(
     candidatePool,
     { lat, lng },
@@ -497,10 +584,21 @@ export async function GET(req: Request) {
     mode,
   })
 
-  const winner = pickWinner(scored, sortBy, radius)
+  const validScored = scored.filter(
+    (r) =>
+      r.is_real_route === true &&
+      Number.isFinite(r.distance_km) &&
+      Number.isFinite(r.estimated_drive_minutes) &&
+      Number.isFinite(Number(r.effective_total_cost)) &&
+      Number.isFinite(Number(r.tankaj_score))
+  )
+
+  const winner = pickWinner(validScored, sortBy, radius)
 
   const sortedOtherOptions = sortBySelectedFilter(
-    scored.filter((r) => r.location_id !== winner?.location_id && r.distance_km <= radius),
+    validScored.filter(
+      (r) => r.location_id !== winner?.location_id && r.distance_km <= radius
+    ),
     sortBy
   ).map((item) => ({
     ...item,
@@ -509,23 +607,31 @@ export async function GET(req: Request) {
 
   const results = winner ? [winner, ...sortedOtherOptions] : sortedOtherOptions
 
-  const nearest = sortBySelectedFilter(
-    scored.filter((r) => r.distance_km <= radius),
-    'distance'
-  )[0] || null
+  const nearest =
+    sortBySelectedFilter(
+      validScored.filter((r) => r.distance_km <= radius),
+      'distance'
+    )[0] || null
 
-  const cheapestFuel = sortBySelectedFilter(
-    scored.filter((r) => r.distance_km <= radius),
-    'price'
-  )[0] || null
+  const cheapestFuel =
+    sortBySelectedFilter(
+      validScored.filter((r) => r.distance_km <= radius),
+      'price'
+    )[0] || null
 
   const bestCrossBorder = results.find((r) => r.is_cross_border) || null
+
+  const fallbackResults = buildFallbackResults(rows, radius, winner?.location_id)
 
   return NextResponse.json({
     success: true,
     ranking: sortBy,
     mode,
-    user: { lat, lng, inferred_country: userCountry },
+    user: {
+      lat,
+      lng,
+      inferred_country: userCountry,
+    },
     params: {
       mode,
       fuel_type: type,
@@ -537,16 +643,21 @@ export async function GET(req: Request) {
       smart_nearby_max_distance_km: SMART_NEARBY_MAX_DISTANCE_KM,
       smart_nearby_max_drive_minutes: SMART_NEARBY_MAX_DRIVE_MINUTES,
       routed_candidates: ROUTED_CANDIDATES_NEARBY,
+      routing_concurrency: ROUTING_CONCURRENCY,
     },
     summary: {
       best_overall: results[0] || null,
       nearest,
       cheapest_fuel: cheapestFuel,
       best_cross_border: bestCrossBorder,
-      preferred_best: null,
+      preferred_best: results[0] || null,
       saving_vs_nearest:
         results[0] && nearest
-          ? round(Number(nearest.effective_total_cost) - Number(results[0].effective_total_cost), 2)
+          ? round(
+              Number(nearest.effective_total_cost) -
+                Number(results[0].effective_total_cost),
+              2
+            )
           : 0,
       saving_vs_cheapest_fuel:
         results[0] && cheapestFuel
@@ -558,12 +669,17 @@ export async function GET(req: Request) {
           : 0,
     },
     results,
-    all_considered_count: rows.length,
-    real_routed_count: scored.length,
-    smart_results_count: scored.filter(
-      (r) =>
-        r.distance_km <= Math.min(radius, SMART_NEARBY_MAX_DISTANCE_KM) &&
-        n(r.estimated_drive_minutes) <= SMART_NEARBY_MAX_DRIVE_MINUTES
-    ).length,
+    fallback_results: fallbackResults,
+    counts: {
+      all_considered_count: rows.length,
+      candidate_pool_count: candidatePool.length,
+      real_routed_count: validScored.length,
+      fallback_count: fallbackResults.length,
+      smart_results_count: validScored.filter(
+        (r) =>
+          r.distance_km <= Math.min(radius, SMART_NEARBY_MAX_DISTANCE_KM) &&
+          r.estimated_drive_minutes <= SMART_NEARBY_MAX_DRIVE_MINUTES
+      ).length,
+    },
   })
 }
