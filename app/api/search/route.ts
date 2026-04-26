@@ -1,24 +1,48 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { getDrivingDistance } from '@/lib/ors'
 
-function normalizeBrand(row: any) {
-  const text = `${row.brand || ''} ${row.name || ''}`.toUpperCase()
-
-  if (text.includes('PETROL')) return 'PETROL'
-  if (text.includes('MOL')) return 'MOL'
-  if (text.includes('SHELL')) return 'SHELL'
-  if (text.includes('OMV')) return 'OMV'
-  if (text.includes('MAXEN')) return 'MAXEN'
-  if (text.includes('INA')) return 'INA'
-  if (text.includes('TIFON')) return 'TIFON'
-
-  return row.brand || 'UNKNOWN'
+type Result = {
+  location_id: string
+  name: string
+  brand: string | null
+  address: string | null
+  city: string | null
+  country_code?: string | null
+  lat?: number
+  lng?: number
+  distance_km: number
+  estimated_drive_minutes?: number | null
+  fuel_type: string
+  price: number
+  total_cost?: number
+  fuel_cost?: number
+  effective_total_cost?: number
+  real_trip_cost?: number
+  time_penalty?: number
+  tankaj_score?: number
+  source?: string
+  captured_at?: string
 }
 
-function brandMatches(row: any, selectedBrand: string) {
-  if (!selectedBrand || selectedBrand === 'ALL') return true
-  return normalizeBrand(row) === selectedBrand
+function normalizeBrand(value?: string | null) {
+  if (!value) return ''
+  return value.trim().toUpperCase()
+}
+
+function inferUserCountry(lat: number, lng: number) {
+  // dovolj dobro za MVP
+  if (lat >= 42 && lat <= 47 && lng >= 13 && lng <= 20) return 'HR'
+  if (lat >= 45 && lat <= 47 && lng >= 13 && lng <= 17) return 'SI'
+  return null
+}
+
+function n(value: any, fallback = 0) {
+  const num = Number(value)
+  return Number.isFinite(num) ? num : fallback
+}
+
+function round(value: number, decimals = 2) {
+  return Number(value.toFixed(decimals))
 }
 
 export async function GET(req: Request) {
@@ -29,15 +53,17 @@ export async function GET(req: Request) {
   const radius = Number(searchParams.get('radius') || 25)
   const type = searchParams.get('type') || 'PETROL_95'
   const amount = Number(searchParams.get('amount') || 50)
-  const selectedBrand = searchParams.get('brand') || 'ALL'
-  const preferredBrand = searchParams.get('preferredBrand') || 'NONE'
 
   const consumption = Number(searchParams.get('consumption') || 7)
+  const avgSpeed = Number(searchParams.get('avgSpeed') || 55)
   const timeValue = Number(searchParams.get('timeValue') || 6)
 
-  if (!lat || !lng) {
+  const brandFilter = normalizeBrand(searchParams.get('brand') || searchParams.get('brandFilter'))
+  const preferredBrand = normalizeBrand(searchParams.get('preferredBrand'))
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return NextResponse.json(
-      { success: false, error: 'Missing lat/lng' },
+      { success: false, error: 'Missing or invalid lat/lng' },
       { status: 400 }
     )
   }
@@ -49,7 +75,7 @@ export async function GET(req: Request) {
     wanted_fuel_type: type,
     amount,
     car_consumption_l_per_100km: consumption,
-    avg_speed_kmh: 50,
+    avg_speed_kmh: avgSpeed,
     time_value_eur_per_hour: timeValue,
   })
 
@@ -57,102 +83,119 @@ export async function GET(req: Request) {
     return NextResponse.json({ success: false, error }, { status: 500 })
   }
 
-  const allFiltered = (data || []).filter((row: any) =>
-    brandMatches(row, selectedBrand)
-  )
+  const userCountry = inferUserCountry(lat, lng)
 
-  const topClosest = allFiltered.slice(0, 10)
+  let baseResults = ((data || []) as Result[])
+    .filter((r) => Number.isFinite(Number(r.price)))
+    .map((r) => {
+      const distanceKm = n(r.distance_km)
+      const driveMinutes =
+        r.estimated_drive_minutes !== undefined && r.estimated_drive_minutes !== null
+          ? n(r.estimated_drive_minutes)
+          : Math.max(1, Math.round((distanceKm / avgSpeed) * 60))
 
-  const preferredCandidates =
-    preferredBrand !== 'NONE'
-      ? allFiltered
-          .filter((row: any) => normalizeBrand(row) === preferredBrand)
-          .slice(0, 8)
-      : []
+      const fuelCost = round(n(r.fuel_cost ?? r.total_cost, r.price * amount), 2)
 
-  const byId = new Map<string, any>()
+      // MVP strošek poti: vožnja tja + približen čas.
+      // Za zdaj uporabimo konservativen model, da ne forsiramo vožnje daleč samo zaradi 1–2 € razlike.
+      const travelFuelCost = round(((distanceKm * 2) * consumption / 100) * n(r.price), 2)
+      const timeCost = round((driveMinutes / 60) * timeValue, 2)
 
-  for (const row of [...topClosest, ...preferredCandidates]) {
-    byId.set(row.location_id, row)
-  }
+      const effectiveTotalCost = round(fuelCost + travelFuelCost + timeCost, 2)
 
-  const candidates = Array.from(byId.values()).slice(0, 18)
+      const brand = normalizeBrand(r.brand)
+      const isPreferred = preferredBrand && brand === preferredBrand
 
-  const routed = await Promise.all(
-    candidates.map(async (row: any) => {
-      const normalizedBrand = normalizeBrand(row)
+      // Preference je samo tie-breaker, ne sme povoziti realno boljše izbire.
+      const preferenceBonus = isPreferred ? 0.35 : 0
 
-      try {
-        const route = await getDrivingDistance(
-          { lat, lng },
-          { lat: row.lat, lng: row.lng }
-        )
-
-        const distanceKm = Number(route.distance_km)
-        const durationMin = Number(route.duration_min)
-        const fuelCost = Number(row.fuel_cost || 0)
-        const price = Number(row.price || 0)
-
-        const travelFuelCost = (distanceKm * consumption / 100) * price
-        const timeCost = (durationMin / 60) * timeValue
-        const effectiveTotalCost = fuelCost + travelFuelCost + timeCost
-
-        return {
-          ...row,
-          brand: normalizedBrand,
-          distance_km: Number(distanceKm.toFixed(2)),
-          estimated_drive_minutes: Math.round(durationMin),
-          fuel_cost: Number(fuelCost.toFixed(2)),
-          travel_fuel_cost: Number(travelFuelCost.toFixed(2)),
-          time_cost: Number(timeCost.toFixed(2)),
-          effective_total_cost: Number(effectiveTotalCost.toFixed(2)),
-          route_source: 'openrouteservice',
-        }
-      } catch {
-        return null
-      }
-    })
-  )
-
-  const realEnriched = routed.filter(Boolean) as any[]
-
-  const baseBest = realEnriched.length
-    ? [...realEnriched].sort(
-        (a: any, b: any) =>
-          Number(a.effective_total_cost) - Number(b.effective_total_cost)
-      )[0]
-    : null
-
-  const ranked = realEnriched
-    .map((row: any) => {
-      const isPreferred =
-        preferredBrand !== 'NONE' && row.brand === preferredBrand
-
-      const isCloseEnough =
-        baseBest &&
-        isPreferred &&
-        Number(row.effective_total_cost) <= Number(baseBest.effective_total_cost) + 0.75 &&
-        (
-          Math.abs(Number(row.distance_km) - Number(baseBest.distance_km)) <= 0.8 ||
-          Math.abs(Number(row.estimated_drive_minutes) - Number(baseBest.estimated_drive_minutes)) <= 2
-        )
-
-      const preferenceBonus = isCloseEnough ? 0.5 : 0
+      const tankajScore = round(effectiveTotalCost - preferenceBonus, 2)
 
       return {
-        ...row,
-        is_preferred_brand: isPreferred,
-        preference_applied: Boolean(isCloseEnough),
-        tankaj_rank_score: Number(
-          (Number(row.effective_total_cost ?? 9999) - preferenceBonus).toFixed(2)
-        ),
+        ...r,
+        brand: r.brand || null,
+        country_code: r.country_code || null,
+        distance_km: round(distanceKm, 2),
+        estimated_drive_minutes: Math.round(driveMinutes),
+        fuel_cost: fuelCost,
+        travel_fuel_cost: travelFuelCost,
+        time_cost: timeCost,
+        effective_total_cost: effectiveTotalCost,
+        tankaj_score: tankajScore,
+        is_preferred_brand: Boolean(isPreferred),
+        is_cross_border: userCountry ? r.country_code && r.country_code !== userCountry : false,
       }
     })
-    .sort((a: any, b: any) => a.tankaj_rank_score - b.tankaj_rank_score)
+
+  if (brandFilter && brandFilter !== 'ALL') {
+    baseResults = baseResults.filter((r: any) => normalizeBrand(r.brand) === brandFilter)
+  }
+
+  const results = [...baseResults].sort((a: any, b: any) => {
+    if (a.tankaj_score !== b.tankaj_score) return a.tankaj_score - b.tankaj_score
+    if (a.price !== b.price) return a.price - b.price
+    return a.distance_km - b.distance_km
+  })
+
+  const bestOverall = results[0] || null
+
+  const nearest = [...results].sort((a, b) => a.distance_km - b.distance_km)[0] || null
+  const cheapestFuel =
+    [...results].sort((a, b) => {
+      if (a.price !== b.price) return a.price - b.price
+      return a.distance_km - b.distance_km
+    })[0] || null
+
+  const bestCrossBorder =
+    results.find((r: any) => r.is_cross_border) ||
+    results.find((r) => r.country_code === 'HR') ||
+    null
+
+  const preferredBest = preferredBrand
+    ? results.find((r: any) => normalizeBrand(r.brand) === preferredBrand) || null
+    : null
+
+  const savingVsNearest =
+    bestOverall && nearest
+      ? round((nearest.effective_total_cost as number) - (bestOverall.effective_total_cost as number), 2)
+      : 0
+
+  const savingVsCheapestFuel =
+    bestOverall && cheapestFuel
+      ? round(
+          (cheapestFuel.effective_total_cost as number) -
+            (bestOverall.effective_total_cost as number),
+          2
+        )
+      : 0
 
   return NextResponse.json({
     success: true,
-    ranking: 'real_world_cost_with_brand_preference',
-    results: ranked,
+    ranking: 'smart_tankaj_score',
+    user: {
+      lat,
+      lng,
+      inferred_country: userCountry,
+    },
+    params: {
+      fuel_type: type,
+      radius_km: radius,
+      amount_liters: amount,
+      consumption_l_per_100km: consumption,
+      avg_speed_kmh: avgSpeed,
+      time_value_eur_per_hour: timeValue,
+      brand_filter: brandFilter || 'ALL',
+      preferred_brand: preferredBrand || null,
+    },
+    summary: {
+      best_overall: bestOverall,
+      nearest,
+      cheapest_fuel: cheapestFuel,
+      best_cross_border: bestCrossBorder,
+      preferred_best: preferredBest,
+      saving_vs_nearest: savingVsNearest,
+      saving_vs_cheapest_fuel: savingVsCheapestFuel,
+    },
+    results,
   })
 }
