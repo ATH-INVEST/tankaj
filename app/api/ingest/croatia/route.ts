@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createHash } from 'crypto'
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 
 export const runtime = 'nodejs'
@@ -8,15 +7,28 @@ export const maxDuration = 60
 
 const MZOE_URL = 'https://mzoe-gor.hr/data.json'
 
-type NormalizedStation = {
-  sourceId: string
-  name: string
-  brand: string | null
-  address: string | null
-  lat: number
-  lng: number
-  prices: Record<string, number>
-  raw: any
+type CroatiaFuel = {
+  id: number
+  naziv?: string
+  ime?: string
+  name?: string
+}
+
+type CroatiaStation = {
+  id: number
+  naziv: string
+  adresa?: string
+  mjesto?: string
+  lat: string | number | null
+  long: string | number | null
+  url?: string
+  obveznik_id?: number
+  cjenici?: {
+    id: number
+    cijena: number
+    gorivo_id: number
+  }[]
+  radnaVremena?: any[]
 }
 
 function isAuthorized(req: NextRequest) {
@@ -26,276 +38,114 @@ function isAuthorized(req: NextRequest) {
   return req.headers.get('authorization') === `Bearer ${cronSecret}`
 }
 
-function hashId(value: string) {
-  return createHash('sha1').update(value).digest('hex').slice(0, 16)
-}
-
-function asText(value: any) {
-  if (value === null || value === undefined) return ''
-  return String(value).trim()
-}
-
-function parsePrice(value: any): number | null {
-  if (typeof value === 'number' && value > 0 && value < 5) return value
-
-  if (typeof value !== 'string') return null
-
-  const cleaned = value
-    .replace(',', '.')
-    .replace(/[^\d.]/g, '')
-    .trim()
-
-  const num = Number(cleaned)
-
-  if (!Number.isFinite(num)) return null
-  if (num <= 0 || num > 5) return null
-
-  return Number(num.toFixed(3))
-}
-
-function normalizeFuelName(input: string): string | null {
-  const value = input.toLowerCase()
+function normalizeFuelName(name: string): string | null {
+  const value = name.toLowerCase()
 
   if (value.includes('adblue')) return null
   if (value.includes('plavi')) return null
+  if (value.includes('lož')) return null
+  if (value.includes('loz')) return null
 
   if (
-    value.includes('eurosuper 95') ||
-    value.includes('euro super 95') ||
-    value.includes('super 95') ||
-    value.includes('benzin 95') ||
-    value.includes('95 bez') ||
-    value.includes('95 s aditiv')
+    value.includes('autoplin') ||
+    value.includes('lpg') ||
+    value.includes('ukapljeni naftni')
   ) {
-    return 'PETROL_95'
+    return 'LPG'
   }
 
   if (
-    value.includes('eurosuper 100') ||
+    value.includes('diesel') ||
+    value.includes('dizel') ||
+    value.includes('eurodizel') ||
+    value.includes('eurodiesel')
+  ) {
+    if (
+      value.includes('premium') ||
+      value.includes('class') ||
+      value.includes('maxx') ||
+      value.includes('q max') ||
+      value.includes('euroclass')
+    ) {
+      return 'PREMIUM_DIESEL'
+    }
+
+    return 'DIESEL'
+  }
+
+  if (
+    value.includes('100') ||
     value.includes('super 100') ||
-    value.includes('benzin 100') ||
-    value.includes('100')
+    value.includes('eurosuper 100')
   ) {
     return 'PETROL_100'
   }
 
   if (
-    value.includes('eurodizel') ||
-    value.includes('euro diesel') ||
-    value.includes('diesel') ||
-    value.includes('dizel') ||
-    value.includes('b7')
+    value.includes('98') ||
+    value.includes('super 98') ||
+    value.includes('eurosuper 98')
   ) {
-    return 'DIESEL'
+    return 'PETROL_98'
   }
 
-  if (value.includes('autoplin') || value.includes('lpg')) {
-    return 'LPG'
+  if (
+    value.includes('95') ||
+    value.includes('super') ||
+    value.includes('benzin') ||
+    value.includes('eurosuper')
+  ) {
+    return 'PETROL_95'
   }
 
   return null
 }
 
-function normalizeBrand(name: string, operator?: string | null) {
-  const text = `${operator || ''} ${name || ''}`.toUpperCase()
+function normalizeBrand(station: CroatiaStation, companyName?: string | null) {
+  const text = `${companyName || ''} ${station.naziv || ''} ${station.url || ''}`.toUpperCase()
 
-  if (text.includes('PETROL')) return 'PETROL'
   if (text.includes('INA')) return 'INA'
+  if (text.includes('PETROL')) return 'PETROL'
   if (text.includes('TIFON')) return 'TIFON'
-  if (text.includes('SHELL')) return 'SHELL'
+  if (text.includes('SHELL') || text.includes('CORAL')) return 'SHELL'
   if (text.includes('CRODUX')) return 'CRODUX'
   if (text.includes('MOL')) return 'MOL'
-  if (text.includes('LUKOIL')) return 'LUKOIL'
+  if (text.includes('ADRIA')) return 'ADRIA OIL'
 
-  return name.split(' ')[0] || null
+  return companyName?.split(' ')[0] || station.naziv.split(' ')[0] || null
 }
 
-function pick(obj: any, keys: string[]) {
-  for (const key of keys) {
-    if (obj && obj[key] !== undefined && obj[key] !== null && obj[key] !== '') {
-      return obj[key]
-    }
-  }
-  return null
+function parseCoordinate(value: string | number | null) {
+  if (value === null || value === undefined) return null
+  const n = Number(value)
+  if (!Number.isFinite(n)) return null
+  return n
 }
 
-function fixCroatiaCoords(latRaw: any, lngRaw: any) {
-  let lat = Number(latRaw)
-  let lng = Number(lngRaw)
+function getCoords(station: CroatiaStation) {
+  // MZOE uporablja zavajajoča imena:
+  // long = latitude, lat = longitude
+  const latitude = parseCoordinate(station.long)
+  const longitude = parseCoordinate(station.lat)
 
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  if (!latitude || !longitude) return null
 
-  // Croatia approx: lat 42–47, lng 13–20.
-  // Some dumps have coords swapped.
-  if (lat >= 13 && lat <= 20 && lng >= 42 && lng <= 47) {
-    const tmp = lat
-    lat = lng
-    lng = tmp
+  if (latitude < 42 || latitude > 47) return null
+  if (longitude < 13 || longitude > 20) return null
+
+  return {
+    lat: latitude,
+    lng: longitude,
   }
-
-  if (lat < 42 || lat > 47 || lng < 13 || lng > 20) {
-    return null
-  }
-
-  return { lat, lng }
 }
 
-function getCoords(obj: any) {
-  const lat = pick(obj, ['lat', 'latitude', 'geo_lat', 'sirina', 'y'])
-  const lng = pick(obj, ['lng', 'lon', 'longitude', 'geo_lng', 'duzina', 'x'])
-
-  const direct = fixCroatiaCoords(lat, lng)
-  if (direct) return direct
-
-  const coords = pick(obj, ['coordinates', 'coord', 'coords', 'koordinate', 'lokacija'])
-  if (Array.isArray(coords) && coords.length >= 2) {
-    return fixCroatiaCoords(coords[1], coords[0]) || fixCroatiaCoords(coords[0], coords[1])
-  }
-
-  return null
+function cleanText(value?: string | null) {
+  if (!value) return null
+  return value.replace(/\s+/g, ' ').trim()
 }
 
-function collectPrices(obj: any, depth = 0, out: Record<string, number> = {}) {
-  if (!obj || depth > 8) return out
-
-  if (Array.isArray(obj)) {
-    for (const item of obj) collectPrices(item, depth + 1, out)
-    return out
-  }
-
-  if (typeof obj !== 'object') return out
-
-  const productName = asText(
-    pick(obj, [
-      'name',
-      'naziv',
-      'fuel',
-      'gorivo',
-      'derivat',
-      'product',
-      'label',
-      'title',
-      'vrsta',
-    ])
-  )
-
-  const productPrice = pick(obj, ['price', 'cijena', 'cena', 'amount', 'value'])
-
-  if (productName) {
-    const fuelType = normalizeFuelName(productName)
-    const price = parsePrice(productPrice)
-
-    if (fuelType && price !== null) {
-      out[fuelType] = price
-    }
-  }
-
-  for (const [key, value] of Object.entries(obj)) {
-    const fuelType = normalizeFuelName(key)
-    const price = parsePrice(value)
-
-    if (fuelType && price !== null) {
-      out[fuelType] = price
-    }
-
-    if (value && typeof value === 'object') {
-      collectPrices(value, depth + 1, out)
-    }
-  }
-
-  return out
-}
-
-function flattenStationObjects(root: any) {
-  const found: any[] = []
-
-  function walk(value: any, depth = 0) {
-    if (!value || depth > 8) return
-
-    if (Array.isArray(value)) {
-      for (const item of value) walk(item, depth + 1)
-      return
-    }
-
-    if (typeof value !== 'object') return
-
-    const coords = getCoords(value)
-    const name = asText(pick(value, ['name', 'naziv', 'title', 'ime', 'stationName']))
-
-    if (coords && name) {
-      found.push(value)
-      return
-    }
-
-    for (const child of Object.values(value)) {
-      walk(child, depth + 1)
-    }
-  }
-
-  walk(root)
-  return found
-}
-
-async function fetchCroatiaStations(): Promise<NormalizedStation[]> {
-  const res = await fetch(MZOE_URL, {
-    headers: {
-      accept: 'application/json',
-      'user-agent': 'Tankaj.si importer',
-    },
-    cache: 'no-store',
-  })
-
-  if (!res.ok) {
-    throw new Error(`mzoe-gor.hr returned ${res.status}`)
-  }
-
-  const json = await res.json()
-  const stationObjects = flattenStationObjects(json)
-
-  const stations: NormalizedStation[] = []
-
-  for (const item of stationObjects) {
-    const coords = getCoords(item)
-    if (!coords) continue
-
-    const name = asText(pick(item, ['name', 'naziv', 'title', 'ime', 'stationName']))
-    if (!name) continue
-
-    const address = asText(
-      pick(item, ['address', 'adresa', 'location', 'lokacija', 'street', 'ulica'])
-    )
-
-    const operator = asText(
-      pick(item, ['operator', 'trgovac', 'company', 'tvrtka', 'brand', 'vlasnik'])
-    )
-
-    const prices = collectPrices(item)
-
-    if (Object.keys(prices).length === 0) continue
-
-    const rawId = asText(pick(item, ['id', 'pk', 'sifra', 'slug', 'uid', 'stationId']))
-    const sourceId =
-      rawId || hashId(`${name}|${address}|${coords.lat}|${coords.lng}`)
-
-    stations.push({
-      sourceId,
-      name,
-      brand: normalizeBrand(name, operator),
-      address: address || null,
-      lat: coords.lat,
-      lng: coords.lng,
-      prices,
-      raw: item,
-    })
-  }
-
-  const unique = new Map<string, NormalizedStation>()
-
-  for (const station of stations) {
-    unique.set(station.sourceId, station)
-  }
-
-  return Array.from(unique.values())
+function getFuelName(fuel: CroatiaFuel | undefined) {
+  return cleanText(fuel?.naziv || fuel?.ime || fuel?.name || null)
 }
 
 export async function GET(req: NextRequest) {
@@ -304,7 +154,6 @@ export async function GET(req: NextRequest) {
   }
 
   const startedAt = new Date().toISOString()
-
   console.log('Tankaj.si HR INGEST RUN:', startedAt)
 
   const syncRun = await supabase
@@ -318,28 +167,112 @@ export async function GET(req: NextRequest) {
     .single()
 
   try {
-    const stations = await fetchCroatiaStations()
+    const res = await fetch(MZOE_URL, {
+      headers: {
+        accept: 'application/json',
+        'user-agent': 'Tankaj.si importer',
+      },
+      cache: 'no-store',
+    })
+
+    if (!res.ok) {
+      throw new Error(`mzoe-gor.hr returned ${res.status}`)
+    }
+
+    const json = await res.json()
+
+    const stations: CroatiaStation[] = Array.isArray(json.postajas) ? json.postajas : []
+    const fuels: CroatiaFuel[] = Array.isArray(json.gorivos) ? json.gorivos : []
+    const companies: any[] = Array.isArray(json.obvezniks) ? json.obvezniks : []
+
+    const fuelById = new Map<number, CroatiaFuel>()
+    for (const fuel of fuels) {
+      fuelById.set(Number(fuel.id), fuel)
+    }
+
+    const companyById = new Map<number, string>()
+    for (const company of companies) {
+      const name = cleanText(company.naziv || company.ime || company.name || company.tvrtka || null)
+      if (company.id && name) {
+        companyById.set(Number(company.id), name)
+      }
+    }
 
     let locationsUpserted = 0
     let pricesInserted = 0
+    let skippedNoCoords = 0
+    let skippedNoPrices = 0
 
     for (const station of stations) {
+      const coords = getCoords(station)
+
+      if (!coords) {
+        skippedNoCoords++
+        continue
+      }
+
+      const name = cleanText(station.naziv) || `HR station ${station.id}`
+      const address = cleanText(station.adresa)
+      const city = cleanText(station.mjesto)
+      const companyName = station.obveznik_id
+        ? companyById.get(Number(station.obveznik_id)) || null
+        : null
+
+      const prices: {
+        fuelType: string
+        price: number
+        rawProductName: string
+      }[] = []
+
+      for (const priceRow of station.cjenici || []) {
+        const price = Number(priceRow.cijena)
+
+        if (!Number.isFinite(price)) continue
+        if (price <= 0 || price > 5) continue
+
+        const fuel = fuelById.get(Number(priceRow.gorivo_id))
+        const fuelName = getFuelName(fuel) || `gorivo_id:${priceRow.gorivo_id}`
+        const fuelType = normalizeFuelName(fuelName)
+
+        if (!fuelType) continue
+
+        prices.push({
+          fuelType,
+          price: Number(price.toFixed(3)),
+          rawProductName: fuelName,
+        })
+      }
+
+      if (prices.length === 0) {
+        skippedNoPrices++
+        continue
+      }
+
+      const brand = normalizeBrand(station, companyName)
+
       const locationPayload = {
         type: 'fuel_station',
-        name: station.name,
-        brand: station.brand,
-        operator: station.brand,
-        address: station.address,
-        city: null,
+        name,
+        brand,
+        operator: companyName || brand,
+        address,
+        city,
         country_code: 'HR',
-        lat: station.lat,
-        lng: station.lng,
-        geo: `POINT(${station.lng} ${station.lat})`,
+        lat: coords.lat,
+        lng: coords.lng,
+        geo: `POINT(${coords.lng} ${coords.lat})`,
         source: 'mzoe-gor.hr',
-        source_id: station.sourceId,
-        opening_hours: null,
+        source_id: String(station.id),
+        opening_hours: station.radnaVremena
+          ? {
+              raw: station.radnaVremena,
+            }
+          : null,
         metadata: {
-          raw: station.raw,
+          url: station.url || null,
+          obveznik_id: station.obveznik_id || null,
+          company_name: companyName,
+          raw: station,
         },
       }
 
@@ -355,19 +288,17 @@ export async function GET(req: NextRequest) {
 
       locationsUpserted++
 
-      for (const [fuelType, price] of Object.entries(station.prices)) {
-        const { error: priceError } = await supabase
-          .from('fuel_prices')
-          .insert({
-            location_id: location.id,
-            fuel_type: fuelType,
-            price,
-            currency: 'EUR',
-            source: 'mzoe-gor.hr',
-            confidence: 'verified',
-            raw_product_name: fuelType,
-            source_updated_at: new Date().toISOString(),
-          })
+      for (const item of prices) {
+        const { error: priceError } = await supabase.from('fuel_prices').insert({
+          location_id: location.id,
+          fuel_type: item.fuelType,
+          price: item.price,
+          currency: 'EUR',
+          source: 'mzoe-gor.hr',
+          confidence: 'verified',
+          raw_product_name: item.rawProductName,
+          source_updated_at: new Date().toISOString(),
+        })
 
         if (priceError) throw priceError
 
@@ -395,6 +326,8 @@ export async function GET(req: NextRequest) {
       stationsFound: stations.length,
       locationsUpserted,
       pricesInserted,
+      skippedNoCoords,
+      skippedNoPrices,
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : JSON.stringify(err, null, 2)
