@@ -14,39 +14,50 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const siteUrl = "https://tankaj.si";
+
 export const metadata: Metadata = {
-  metadataBase: new URL("https://tankaj.si"),
+  metadataBase: new URL(siteUrl),
   title: {
-    default: "Ne tankaj več na pamet • Tankaj.si",
+    default: "Cena goriva Slovenija in Hrvaška • Tankaj.si",
     template: "%s | Tankaj.si",
   },
   description:
-    "Primerjaj cene goriva in izračunaj dejanski strošek poti. Najnižja cena na liter ni vedno najboljša izbira.",
+    "Primerjaj cene goriva in izračunaj dejanski strošek poti. Najdi najcenejšo črpalko v Sloveniji, na Hrvaškem in v sosednjih državah.",
   keywords: [
     "cena goriva",
+    "cena goriva danes",
     "bencin cena",
     "dizel cena",
     "najcenejša črpalka",
+    "cene goriv Slovenija",
     "gorivo Slovenija",
     "gorivo Hrvaška",
     "gorivo Avstrija",
     "gorivo Italija",
     "gorivo Madžarska",
     "tankaj pametno",
+    "kje se splača tankati",
   ],
   authors: [{ name: "Tankaj.si" }],
   creator: "Tankaj.si",
+  publisher: "Tankaj.si",
+  applicationName: "Tankaj.si",
+  category: "utility",
   manifest: "/manifest.json",
+  alternates: {
+    canonical: siteUrl,
+  },
   appleWebApp: {
     capable: true,
     title: "Tankaj",
     statusBarStyle: "black-translucent",
   },
   openGraph: {
-    title: "Ne tankaj na pamet • Tankaj.si",
+    title: "Cena goriva Slovenija in Hrvaška • Tankaj.si",
     description:
-      "Najnižja cena na liter ni vedno najboljša izbira. Izračunaj realni strošek poti.",
-    url: "https://tankaj.si",
+      "Najnižja cena na liter ni vedno najboljša izbira. Izračunaj realni strošek poti in preveri, kje se ti dejansko splača tankati.",
+    url: siteUrl,
     siteName: "Tankaj.si",
     locale: "sl_SI",
     type: "website",
@@ -55,19 +66,27 @@ export const metadata: Metadata = {
         url: "/og-image.png",
         width: 1200,
         height: 630,
-        alt: "Tankaj.si – pametno tankanje",
+        alt: "Tankaj.si – primerjava cen goriva in pametno tankanje",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Ne tankaj na pamet • Tankaj.si",
-    description: "Izračunaj, katera črpalka se ti dejansko splača.",
+    title: "Cena goriva Slovenija in Hrvaška • Tankaj.si",
+    description:
+      "Izračunaj, katera črpalka se ti dejansko splača glede na ceno goriva, razdaljo in strošek poti.",
     images: ["/og-image.png"],
   },
   robots: {
     index: true,
     follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
   },
   icons: {
     icon: [
@@ -107,7 +126,6 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-[#06140f] text-white">
         {children}
         <MobileAppBar />
-        
 
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-29HNWBQDL1"
