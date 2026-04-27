@@ -8,14 +8,14 @@ export default function MobileAppBar() {
           href="#top"
           className="rounded-[18px] bg-[#b9fb6a] px-3 py-2.5 text-center text-xs font-black text-[#071a12]"
         >
-          Tankaj
+          Išči
         </a>
 
         <a
           href="#result"
           className="rounded-[18px] px-3 py-2.5 text-center text-xs font-black text-white/65"
         >
-          Kako
+          Rezultat
         </a>
 
         <button
