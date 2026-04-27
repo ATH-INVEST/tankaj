@@ -61,9 +61,12 @@ type AnyResult = RoutedResult & {
   recommendation_reason: string | null
 }
 
-const INITIAL_PER_BUCKET = 20
+const INITIAL_PER_BUCKET = 8
+const COUNTRY_COVERAGE_LIMIT = 2
+const BRAND_COVERAGE_LIMIT = 1
+const INITIAL_CANDIDATE_LIMIT = 22
 const MORE_LIMIT = 5
-const ROUTING_CONCURRENCY = 6
+const ROUTING_CONCURRENCY = 8
 const CONSUMPTION_DEFAULT = 7
 const TIME_VALUE_DEFAULT = 12
 const ROUTE_CACHE_DAYS = 30
@@ -84,16 +87,40 @@ function routeKeyCoord(value: number) {
 function normalizeBrand(value?: string | null) {
   return value ? value.trim().toUpperCase() : ''
 }
-function brandMatches(rowBrand: string | null | undefined, selectedBrand: string) {
+
+function inferBrandKey(row: Pick<Result, 'brand' | 'name'>) {
+  const explicit = normalizeBrand(row.brand)
+  if (explicit) return explicit
+
+  const name = normalizeBrand(row.name)
+  const known = [
+    'PETROL',
+    'MOL',
+    'SHELL',
+    'OMV',
+    'TURMÖL',
+    'TURMOEL',
+    'JET',
+    'AVIA',
+    'MAXEN',
+    'INA',
+    'TIFON',
+    'CRODUX',
+  ]
+
+  return known.find((brand) => name.includes(brand)) || ''
+}
+function brandMatches(row: Pick<Result, 'brand' | 'name'>, selectedBrand: string) {
   if (!selectedBrand || selectedBrand === 'ALL') return true
 
-  const row = normalizeBrand(rowBrand)
   const selected = normalizeBrand(selectedBrand)
+  const inferred = inferBrandKey(row)
+  const name = normalizeBrand(row.name)
 
-  if (!row) return false
-  if (row === selected) return true
+  if (!inferred && !name) return false
+  if (inferred === selected) return true
 
-  return row.includes(selected) || selected.includes(row)
+  return inferred.includes(selected) || selected.includes(inferred) || name.includes(selected)
 }
 
 function countryMatches(rowCountry: string | null | undefined, selectedCountry: string) {
@@ -154,34 +181,37 @@ function buildInitialCandidatePool(rows: Result[], amount: number) {
     .slice(0, INITIAL_PER_BUCKET)
 
   const byCountry = new Map<string, Result[]>()
+  const byBrand = new Map<string, Result[]>()
 
   for (const row of rows) {
     const country = String(row.country_code || 'UNKNOWN').toUpperCase()
-    const existing = byCountry.get(country) || []
-    existing.push(row)
-    byCountry.set(country, existing)
+    byCountry.set(country, [...(byCountry.get(country) || []), row])
+
+    const brand = inferBrandKey(row)
+    if (brand) byBrand.set(brand, [...(byBrand.get(brand) || []), row])
   }
 
-  const countryCoverage: Result[] = []
+  const coverage: Result[] = []
 
   for (const group of byCountry.values()) {
-    countryCoverage.push(
+    coverage.push(
       ...[...group]
         .sort((a, b) => n(a.distance_km, 999) - n(b.distance_km, 999))
-        .slice(0, 8)
-    )
-
-    countryCoverage.push(
-      ...[...group]
-        .sort((a, b) => {
-          if (a.price !== b.price) return a.price - b.price
-          return n(a.distance_km, 999) - n(b.distance_km, 999)
-        })
-        .slice(0, 8)
+        .slice(0, COUNTRY_COVERAGE_LIMIT)
     )
   }
 
-  return uniqueByLocation([...nearest, ...cheapest, ...smart, ...countryCoverage])
+  for (const group of byBrand.values()) {
+    coverage.push(
+      ...[...group]
+        .sort((a, b) => n(a.distance_km, 999) - n(b.distance_km, 999))
+        .slice(0, BRAND_COVERAGE_LIMIT)
+    )
+  }
+
+  return uniqueByLocation([...nearest, ...cheapest, ...smart, ...coverage])
+    .sort((a, b) => candidateScore(a, amount) - candidateScore(b, amount))
+    .slice(0, INITIAL_CANDIDATE_LIMIT)
 }
 
 function buildMoreCandidatePool(rows: Result[], amount: number, sortBy: SortBy, offset: number) {
@@ -454,6 +484,10 @@ async function getRoute(
   if (cached) return cached
 
   try {
+    const finalRoute = await getOsrm(from, to)
+    await saveCachedRoute(from, to, finalRoute)
+    return finalRoute
+  } catch {
     const route = await getDrivingDistance(from, to)
 
     const finalRoute = {
@@ -462,10 +496,6 @@ async function getRoute(
       route_source: 'openrouteservice' as const,
     }
 
-    await saveCachedRoute(from, to, finalRoute)
-    return finalRoute
-  } catch {
-    const finalRoute = await getOsrm(from, to)
     await saveCachedRoute(from, to, finalRoute)
     return finalRoute
   }
@@ -647,7 +677,7 @@ export async function GET(req: Request) {
   let rows = uniqueByLocation([...dbRows, ...austriaRows])
 
   if (brandFilter && brandFilter !== 'ALL') {
-  rows = rows.filter((r) => brandMatches(r.brand, brandFilter))
+  rows = rows.filter((r) => brandMatches(r, brandFilter))
 }
 
 if (countryFilter && countryFilter !== 'ALL') {

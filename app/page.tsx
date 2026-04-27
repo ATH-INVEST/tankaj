@@ -118,14 +118,28 @@ function countryMatches(rowCountry: string | null | undefined, selectedCountry: 
   if (row === selected) return true
 
   const aliases: Record<string, string[]> = {
-    SI: ['SI', 'SLO', 'SVN'],
-    HR: ['HR', 'HRV', 'CRO'],
-    AT: ['AT', 'AUT'],
-    IT: ['IT', 'ITA'],
-    HU: ['HU', 'HUN'],
+    SI: ['SI', 'SLO', 'SVN', 'SLOVENIJA', 'SLOVENIA'],
+    HR: ['HR', 'HRV', 'CRO', 'CROATIA', 'HRVATSKA'],
+    AT: ['AT', 'AUT', 'AUSTRIA', 'AVSTRIJA', 'OSTERREICH', 'ÖSTERREICH'],
+    IT: ['IT', 'ITA', 'ITALY', 'ITALIJA'],
+    HU: ['HU', 'HUN', 'HUNGARY', 'MADZARSKA', 'MADŽARSKA'],
   }
 
   return aliases[selected]?.includes(row) ?? false
+}
+
+function stationBrandMatches(item: Result, selectedBrand: string) {
+  const selected = normalizeFilterValue(selectedBrand)
+  if (!selected || selected === 'ALL') return true
+
+  const brand = normalizeFilterValue(item.brand)
+  const name = normalizeFilterValue(item.name)
+
+  if (brand && (brand === selected || brand.includes(selected) || selected.includes(brand))) {
+    return true
+  }
+
+  return Boolean(name && name.includes(selected))
 }
 
 function scoreItem(
@@ -214,7 +228,7 @@ function buildCrossBorderInsight(
 
 export default function Home() {
   const [fuelType, setFuelType] = useState('PETROL_95')
-  const [radius, setRadius] = useState(50)
+  const [radius, setRadius] = useState(25)
   const [amount, setAmount] = useState(50)
   const [brand, setBrand] = useState('ALL')
   const [country, setCountry] = useState('ALL')
@@ -245,7 +259,7 @@ export default function Home() {
 
   const filteredResults = useMemo(() => {
     return results.filter(
-      (item) => brandMatches(item.brand, brand) && countryMatches(item.country_code, country)
+      (item) => stationBrandMatches(item, brand) && countryMatches(item.country_code, country)
     )
   }, [results, brand, country])
 
@@ -709,7 +723,7 @@ function ResultPanel({
       {loading && <LoadingState status={status} />}
 
       {searched && !loading && status === 'done' && !best && (
-        <EmptyState text="Za izbrane filtre trenutno ni izračunanih možnosti. Poskusi prikazati vse države/znamke ali povečati radius." />
+        <EmptyState text="Za izbrane filtre trenutno ni izračunanih možnosti. Prikaži vse države/znamke ali naloži dodatne možnosti." />
       )}
 
       {searched && !loading && status === 'error' && (
