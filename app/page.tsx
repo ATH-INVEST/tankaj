@@ -278,6 +278,11 @@ async function loadMoreResults() {
     const receivedCount = Number(json.results?.length || 0)
     const next = Number(json.next_offset || nextOffset + 5)
 
+    if (receivedCount === 0) {
+      setHasMore(false)
+      return
+    }
+
     setResults((prev) => {
       const map = new Map<string, Result>()
       for (const item of prev) map.set(item.location_id, item)
@@ -742,7 +747,6 @@ function ResultPanel({
                   if (!showOthers) {
                     setShowOthers(true)
                     trackEvent('other_options_opened')
-                    if (otherResults.length < 5 && hasMore) loadMoreResults()
                     return
                   }
 
