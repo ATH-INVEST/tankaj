@@ -590,7 +590,7 @@ function HeroSearch({
       )}
 
       <div className="mt-4 rounded-[26px] border border-white/10 bg-[#123024]/72 p-3 sm:p-4 lg:p-5">
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2 items-end">
           <SelectDark label="Gorivo" value={fuelType} onChange={setFuelType} options={[['PETROL_95', 'Bencin 95'], ['DIESEL', 'Dizel']]} />
           <SelectDark label="Radius" value={String(radius)} onChange={(v) => setRadius(Number(v))} options={[['5', '5 km'], ['10', '10 km'], ['25', '25 km'], ['50', '50 km'], ['100', '100 km'], ['200', '200 km']]} />
 
@@ -601,7 +601,7 @@ function HeroSearch({
               onChange={(e) => setAmount(Math.max(1, Number(e.target.value) || 1))}
               type="number"
               min={1}
-              className="h-12 w-full rounded-2xl border border-white/10 bg-[#071a12] px-4 text-[15px] font-semibold text-white outline-none transition focus:border-[#b9fb6a]/70"
+              className="h-[56px] sm:h-[64px] w-full rounded-2xl border border-white/10 bg-[#071a12] px-4 text-[15px] font-semibold text-white outline-none transition focus:border-[#b9fb6a]/70"
             />
           </label>
 
@@ -613,18 +613,17 @@ function HeroSearch({
 )}
 
           <button
-            type="button"
-            onClick={() => setShowAdvanced((v: boolean) => !v)}
-            className="h-12 rounded-2xl border border-white/10 bg-white/[0.055] px-4 text-left text-sm font-bold text-white/78 transition hover:bg-white/[0.09]"
-          >
-            {showAdvanced ? 'Skrij filtre' : 'Več filtrov'}
-          </button>
+  type="button"
+  onClick={() => setShowAdvanced((v: boolean) => !v)}
+  className="h-[56px] sm:h-[64px] w-full rounded-2xl border border-white/10 bg-white/[0.06] px-5 text-left text-[15px] sm:text-[16px] font-semibold text-white/80 flex items-center self-end transition hover:bg-white/[0.10]"
+>
+  {showAdvanced ? 'Skrij filtre' : 'Več filtrov'}
+</button>
 
           <button
             onClick={search}
             disabled={loading || appMode === 'route'}
-            className="h-12 rounded-2xl bg-[#b9fb6a] px-5 text-sm font-black text-[#071a12] shadow-[0_12px_30px_rgba(185,251,106,.22)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70 sm:col-span-2"
-          >
+className="h-[56px] sm:h-[64px] rounded-2xl bg-[#b9fb6a] px-5 text-sm font-black text-[#071a12] shadow-[0_12px_30px_rgba(185,251,106,.22)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70 sm:col-span-2"          >
             {appMode === 'route' ? 'Na poti kmalu' : status === 'location' ? 'Pridobivam lokacijo ...' : status === 'routing' ? 'Računam realne poti ...' : 'Osveži najboljšo izbiro'}
           </button>
         </div>
@@ -1151,8 +1150,7 @@ function SelectDark({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-12 w-full appearance-none rounded-2xl border border-white/10 bg-[#071a12] bg-[linear-gradient(45deg,transparent_50%,rgba(255,255,255,.6)_50%),linear-gradient(135deg,rgba(255,255,255,.6)_50%,transparent_50%)] bg-[length:5px_5px,5px_5px] bg-[position:calc(100%-18px)_21px,calc(100%-13px)_21px] bg-no-repeat px-4 pr-10 text-[15px] font-semibold text-white outline-none transition focus:border-[#b9fb6a]/70"
-      >
+className="h-[56px] sm:h-[64px] w-full appearance-none rounded-2xl border border-white/10 bg-[#071a12] bg-[linear-gradient(45deg,transparent_50%,rgba(255,255,255,.6)_50%),linear-gradient(135deg,rgba(255,255,255,.6)_50%,transparent_50%)] bg-[length:5px_5px,5px_5px] bg-[position:calc(100%-18px)_25px,calc(100%-13px)_25px] sm:bg-[position:calc(100%-18px)_29px,calc(100%-13px)_29px] bg-no-repeat px-4 pr-10 text-[15px] font-semibold text-white outline-none transition focus:border-[#b9fb6a]/70"      >
         {options.map(([value, label]) => (
           <option key={value} value={value} className="bg-[#071a12] text-white">
             {label}
