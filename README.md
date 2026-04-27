@@ -1,36 +1,164 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ⛽ Tankaj.si
 
-## Getting Started
+Pameten način za odločitev: **kje se ti trenutno najbolj splača tankati.**
 
-First, run the development server:
+Tankaj.si ni samo seznam bencinskih servisov.
+Je **decision engine**, ki upošteva realne stroške poti in ti predlaga najboljšo izbiro.
+
+---
+
+## 🚀 Kaj rešuje
+
+Večina aplikacij pokaže:
+
+* najcenejšo ceno na liter
+* najbližjo črpalko
+
+👉 ampak to pogosto **ni optimalna odločitev**
+
+Tankaj.si izračuna:
+
+* dejanski strošek poti
+* porabo vozila
+* čas vožnje
+* potencialni prihranek
+
+➡️ in poda **najboljšo realno izbiro**
+
+---
+
+## 🧠 Kako deluje
+
+Aplikacija upošteva:
+
+* 📍 tvojo lokacijo
+* ⛽ cene goriva
+* 🚗 porabo vozila
+* 📏 razdaljo (realna pot, ne zračna)
+* ⏱ čas vožnje (vrednoten)
+* 💸 skupni strošek (gorivo + pot)
+
+Rezultat ni “najcenejša črpalka”, ampak:
+
+👉 **najbolj smiselna odločitev**
+
+---
+
+## 🌍 Trenutna pokritost
+
+* 🇸🇮 Slovenija
+* 🇭🇷 Hrvaška
+* 🇦🇹 Avstrija
+* 🇮🇹 Italija
+
+➡️ naslednje:
+
+* 🇭🇺 Madžarska
+* ⚡ EV polnilnice
+
+---
+
+## 🛠 Tech stack
+
+* **Next.js (App Router)**
+* **React**
+* **Supabase (DB + backend)**
+* **Vercel (deploy)**
+* **Geolocation API**
+* **Routing / distance calculations**
+
+---
+
+## ⚙️ Lokalni razvoj
 
 ```bash
+git clone https://github.com/ATH-INVEST/tankaj.git
+cd tankaj
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Odpri:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+http://localhost:3000
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## 🗂 Ključne stvari v projektu
 
-To learn more about Next.js, take a look at the following resources:
+* `app/page.tsx` → glavni UI + logika prikaza rezultatov
+* `app/api/*` → API route-i (routing, izračuni, data fetch)
+* `lib/` → shared logika (npr. analytics, utils)
+* `supabase/` → struktura baze in migracije
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 🎯 Produktni cilj
 
-## Deploy on Vercel
+Aplikacija mora biti:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+* 📱 mobile-first
+* ⚡ hitra (instant rezultat)
+* 🧼 enostavna (brez overloada)
+* 💎 premium UI (Stripe / Apple feel)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Uporabnik:
+
+> odpre app → dovoli lokacijo → vidi najboljšo odločitev
+
+---
+
+## 🔥 Ključna razlika
+
+Namesto:
+
+> “Najcenejši dizel: 1.55€”
+
+Dobiš:
+
+> “Tukaj se ti najbolj splača tankati (prihraniš 4,20€)”
+
+---
+
+## 🧪 Status
+
+Aktiven razvoj (production mindset, ne demo)
+
+* real data
+* real routing
+* optimizacija odločanja
+
+---
+
+## 🧭 Roadmap
+
+* [ ] Italija data integration
+* [ ] EV charging support
+* [ ] user preferences (saved vehicle consumption)
+* [ ] caching & performance optimizations
+* [ ] smarter recommendation engine
+
+---
+
+## 🤝 Prispevki
+
+Projekt je trenutno interni, ampak feedback je dobrodošel.
+
+---
+
+## 📄 Licenca
+
+Private project – ATH INVEST d.o.o.
+
+---
+
+## 👤 Avtor
+
+Gašper Parte
+ATH INVEST d.o.o.
+
+---
+
+👉 https://tankaj.si
