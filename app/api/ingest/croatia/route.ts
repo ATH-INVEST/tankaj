@@ -278,13 +278,15 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    for (const part of chunk(locationPayloads, LOCATION_BATCH_SIZE)) {
-      const { error } = await supabase
-        .from('locations')
-        .upsert(part, { onConflict: 'source,source_id' })
+   for (const part of chunk(pricePayloads, PRICE_BATCH_SIZE)) {
+  const { error } = await supabase
+    .from('fuel_prices')
+    .upsert(part, {
+      onConflict: 'location_id,fuel_type,source,source_updated_at',
+    })
 
-      if (error) throw error
-    }
+  if (error) throw error
+}
 
     const sourceIds = locationPayloads.map((location) => String(location.source_id))
 
