@@ -1,16 +1,8 @@
 {
   "crons": [
     {
-      "path": "/api/ingest/slovenia",
-      "schedule": "*/30 * * * *"
-    },
-    {
-      "path": "/api/ingest/croatia",
-      "schedule": "*/30 * * * *"
-    },
-    {
-      "path": "/api/ingest/italy",
-      "schedule": "0 * * * *"
+      "path": "/api/ingest/all",
+      "schedule": "0 4 * * *"
     }
   ]
 }

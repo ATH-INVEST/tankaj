@@ -4,8 +4,6 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-const INGEST_TIMEOUT_MS = 55_000
-
 function isAuthorized(req: NextRequest) {
   if (process.env.NODE_ENV !== 'production') return true
 
@@ -13,46 +11,40 @@ function isAuthorized(req: NextRequest) {
   const authHeader = req.headers.get('authorization')
   const userAgent = req.headers.get('user-agent') || ''
 
-  if (userAgent.toLowerCase().includes('vercel-cron')) {
-    return true
-  }
-
+  if (userAgent.toLowerCase().includes('vercel-cron')) return true
   if (!cronSecret) return false
 
   return authHeader === `Bearer ${cronSecret}`
 }
 
-async function callIngest(origin: string, path: string) {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), INGEST_TIMEOUT_MS)
+async function callIngest(origin: string, path: string, req: NextRequest) {
+  const authHeader = req.headers.get('authorization') || undefined
 
   try {
     const res = await fetch(`${origin}${path}`, {
-      method: 'GET',
-      headers: {
-        authorization: `Bearer ${process.env.CRON_SECRET || ''}`,
-      },
+      headers: authHeader
+        ? {
+            authorization: authHeader,
+          }
+        : undefined,
       cache: 'no-store',
-      signal: controller.signal,
     })
 
-    const json = await res.json().catch(() => null)
+    const response = await res.json().catch(() => null)
 
     return {
       path,
       ok: res.ok,
       status: res.status,
-      response: json,
+      response,
     }
   } catch (err) {
     return {
       path,
       ok: false,
-      status: 0,
+      status: 500,
       error: err instanceof Error ? err.message : String(err),
     }
-  } finally {
-    clearTimeout(timeout)
   }
 }
 
@@ -64,17 +56,17 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  const startedAt = new Date().toISOString()
   const origin = new URL(req.url).origin
+  const startedAt = new Date().toISOString()
 
   const results = await Promise.all([
-    callIngest(origin, '/api/ingest/slovenia'),
-    callIngest(origin, '/api/ingest/croatia'),
-    callIngest(origin, '/api/ingest/italy'),
+    callIngest(origin, '/api/ingest/slovenia', req),
+    callIngest(origin, '/api/ingest/croatia', req),
+    callIngest(origin, '/api/ingest/italy', req),
   ])
 
   return NextResponse.json({
-    success: results.every((r) => r.ok),
+    success: results.every((item) => item.ok),
     startedAt,
     finishedAt: new Date().toISOString(),
     results,
