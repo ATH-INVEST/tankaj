@@ -38,7 +38,7 @@ type NormalizedAustriaResult = {
   travel_fuel_cost: number
   time_cost: number
   effective_total_cost: number
-  route_source: 'air',
+  route_source: 'air'
   source: 'e-control.at'
 }
 
@@ -220,7 +220,7 @@ export async function GET(req: NextRequest) {
         travel_fuel_cost: round2(travelFuelCost),
         time_cost: round2(timeCost),
         effective_total_cost: round2(effectiveTotalCost),
-        route_source: 'air'
+        route_source: 'air',
         source: 'e-control.at',
       }
     })

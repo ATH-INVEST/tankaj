@@ -20,6 +20,7 @@ type Result = {
   estimated_drive_minutes?: number | null
   fuel_type: string
   price: number
+  total_cost?: number | null
   fuel_cost?: number | null
   source?: string | null
   captured_at?: string | null
