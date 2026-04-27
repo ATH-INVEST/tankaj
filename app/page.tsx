@@ -253,7 +253,6 @@ export default function Home() {
   const [brand, setBrand] = useState('ALL')
   const [sortBy, setSortBy] = useState<SortBy>('smart')
   const [appMode, setAppMode] = useState<'nearby' | 'route'>('nearby')
-  const [showAdvanced, setShowAdvanced] = useState(false)
   const [showOthers, setShowOthers] = useState(false)
 
   const [includeFuel, setIncludeFuel] = useState(true)
@@ -356,7 +355,6 @@ async function loadMoreResults() {
       type: fuelType,
       radius: String(radius),
       amount: String(amount),
-      brand: 'ALL',
       mode: appMode,
       sortBy,
       batch: 'more',
@@ -429,8 +427,7 @@ async function loadMoreResults() {
           type: fuelType,
           radius: String(radius),
           amount: String(amount),
-          brand: 'ALL',
-          mode: appMode,
+              mode: appMode,
           batch: 'initial',
         })
 
@@ -577,8 +574,6 @@ async function loadMoreResults() {
             setAmount={setAmount}
             appMode={appMode}
             setAppMode={setAppMode}
-            showAdvanced={showAdvanced}
-            setShowAdvanced={setShowAdvanced}
             loading={loading}
             status={status}
             search={requestLocationAndSearch}
@@ -636,8 +631,6 @@ function HeroSearch({
   brandOptions,
   appMode,
   setAppMode,
-  showAdvanced,
-  setShowAdvanced,
   loading,
   status,
   search,
@@ -696,19 +689,7 @@ function HeroSearch({
             />
           </label>
 
-          {showAdvanced && (
-  <>
-    <SelectDark label="Znamka" value={brand} onChange={setBrand} options={brandOptions} />
-  </>
-)}
-
-          <button
-  type="button"
-  onClick={() => setShowAdvanced((v: boolean) => !v)}
-  className="h-[56px] sm:h-[64px] w-full rounded-2xl border border-white/10 bg-white/[0.06] px-5 text-left text-[15px] sm:text-[16px] font-semibold text-white/80 flex items-center self-end transition hover:bg-white/[0.10]"
->
-  {showAdvanced ? 'Skrij znamke' : 'Filtriraj znamko'}
-</button>
+          <SelectDark label="Znamka" value={brand} onChange={setBrand} options={brandOptions} />
 
           <button
             onClick={search}
