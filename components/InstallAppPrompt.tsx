@@ -30,6 +30,8 @@ export default function InstallAppPrompt() {
   const [showIosHint, setShowIosHint] = useState(false);
 
   useEffect(() => {
+    if (window.innerWidth >= 1024) return;
+
     if (isStandalone()) return;
 
     const dismissed = localStorage.getItem("tankaj_install_dismissed");
@@ -86,7 +88,7 @@ export default function InstallAppPrompt() {
   if (!show) return null;
 
   return (
-    <div className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom,0px)+12px)] z-[99999] mx-auto max-w-md rounded-[24px] border border-white/10 bg-[#071a12]/95 p-4 text-white shadow-[0_24px_80px_rgba(0,0,0,.45)] backdrop-blur-xl">
+<div className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom,0px)+12px)] z-[99999] mx-auto max-w-md rounded-[24px] border border-white/10 bg-[#071a12]/95 p-4 text-white shadow-[0_24px_80px_rgba(0,0,0,.45)] backdrop-blur-xl lg:hidden">
       <div className="flex items-start gap-3">
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#b9fb6a] text-lg font-black text-[#071a12]">
           T
