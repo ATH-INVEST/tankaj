@@ -51,10 +51,25 @@ Rezultat ni “najcenejša črpalka”, ampak:
 * 🇦🇹 Avstrija
 * 🇮🇹 Italija
 
-➡️ naslednje:
+---
 
-* 🇭🇺 Madžarska
+## 🔜 Naslednji koraki
+
 * ⚡ EV polnilnice
+* 🇭🇺 Madžarska
+* 📊 izboljšan recommendation engine
+* ⚡ performance optimizacija
+
+---
+
+## 🧪 Status
+
+**Beta verzija**
+
+* real data
+* real routing
+* aktivni razvoj
+* hitre iteracije
 
 ---
 
@@ -80,7 +95,7 @@ npm run dev
 
 Odpri:
 
-```bash
+```
 http://localhost:3000
 ```
 
@@ -90,8 +105,8 @@ http://localhost:3000
 
 * `app/page.tsx` → glavni UI + logika prikaza rezultatov
 * `app/api/*` → API route-i (routing, izračuni, data fetch)
-* `lib/` → shared logika (npr. analytics, utils)
-* `supabase/` → struktura baze in migracije
+* `lib/` → shared logika
+* `supabase/` → baza + struktura
 
 ---
 
@@ -100,8 +115,8 @@ http://localhost:3000
 Aplikacija mora biti:
 
 * 📱 mobile-first
-* ⚡ hitra (instant rezultat)
-* 🧼 enostavna (brez overloada)
+* ⚡ hitra
+* 🧼 enostavna
 * 💎 premium UI (Stripe / Apple feel)
 
 Uporabnik:
@@ -118,46 +133,19 @@ Namesto:
 
 Dobiš:
 
-> “Tukaj se ti najbolj splača tankati (prihraniš 4,20€)”
+> “Tukaj se ti najbolj splača tankati (prihraniš X €)”
 
 ---
 
-## 🧪 Status
+## 👤 Avtor
 
-Aktiven razvoj (production mindset, ne demo)
-
-* real data
-* real routing
-* optimizacija odločanja
-
----
-
-## 🧭 Roadmap
-
-* [ ] Italija data integration
-* [ ] EV charging support
-* [ ] user preferences (saved vehicle consumption)
-* [ ] caching & performance optimizations
-* [ ] smarter recommendation engine
-
----
-
-## 🤝 Prispevki
-
-Projekt je trenutno interni, ampak feedback je dobrodošel.
+**Gašper Parte**
 
 ---
 
 ## 📄 Licenca
 
 Private project – ATH INVEST d.o.o.
-
----
-
-## 👤 Avtor
-
-Gašper Parte
-ATH INVEST d.o.o.
 
 ---
 
