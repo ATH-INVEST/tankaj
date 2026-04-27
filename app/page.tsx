@@ -527,10 +527,13 @@ async function loadMoreResults() {
     (position) => {
       trackEvent('location_allowed')
 
-      setCoords({
-        lat: position.coords.latitude,
-        lng: position.coords.longitude,
-      })
+      const nextCoords = {
+  lat: position.coords.latitude,
+  lng: position.coords.longitude,
+}
+
+setCoords(nextCoords)
+runSearch(nextCoords)
     },
     () => {
       trackEvent('location_denied')
@@ -539,7 +542,7 @@ async function loadMoreResults() {
     },
     { enableHighAccuracy: false, timeout: 7000, maximumAge: 300000 }
   )
-}, [appMode])
+}, [appMode, runSearch])
 
   useEffect(() => {
     if (didAutoLocate.current) return
