@@ -61,10 +61,10 @@ type AnyResult = RoutedResult & {
   recommendation_reason: string | null
 }
 
-const INITIAL_PER_BUCKET = 8
-const COUNTRY_COVERAGE_LIMIT = 2
+const INITIAL_PER_BUCKET = 5
+const COUNTRY_COVERAGE_LIMIT = 1
 const BRAND_COVERAGE_LIMIT = 1
-const INITIAL_CANDIDATE_LIMIT = 22
+const INITIAL_CANDIDATE_LIMIT = 14
 const MORE_LIMIT = 5
 const ROUTING_CONCURRENCY = 8
 const CONSUMPTION_DEFAULT = 7

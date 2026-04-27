@@ -44,13 +44,6 @@ const BRANDS = [
   ['TIFON', 'Tifon'],
   ['CRODUX', 'Crodux'],
 ]
-const COUNTRIES = [
-  ['ALL', 'Vse države'],
-  ['SI', 'Slovenija'],
-  ['HR', 'Hrvaška'],
-  ['AT', 'Avstrija'],
-]
-
 const sortOptions: [SortBy, string][] = [
   ['smart', 'Priporočeno'],
   ['price', 'Najcenejše €/L'],
@@ -109,25 +102,6 @@ function brandMatches(rowBrand: string | null | undefined, selectedBrand: string
   return row.includes(selected) || selected.includes(row)
 }
 
-function countryMatches(rowCountry: string | null | undefined, selectedCountry: string) {
-  const selected = normalizeFilterValue(selectedCountry)
-  if (!selected || selected === 'ALL') return true
-
-  const row = normalizeFilterValue(rowCountry)
-  if (!row) return false
-  if (row === selected) return true
-
-  const aliases: Record<string, string[]> = {
-    SI: ['SI', 'SLO', 'SVN', 'SLOVENIJA', 'SLOVENIA'],
-    HR: ['HR', 'HRV', 'CRO', 'CROATIA', 'HRVATSKA'],
-    AT: ['AT', 'AUT', 'AUSTRIA', 'AVSTRIJA', 'OSTERREICH', 'ÖSTERREICH'],
-    IT: ['IT', 'ITA', 'ITALY', 'ITALIJA'],
-    HU: ['HU', 'HUN', 'HUNGARY', 'MADZARSKA', 'MADŽARSKA'],
-  }
-
-  return aliases[selected]?.includes(row) ?? false
-}
-
 function stationBrandMatches(item: Result, selectedBrand: string) {
   const selected = normalizeFilterValue(selectedBrand)
   if (!selected || selected === 'ALL') return true
@@ -183,17 +157,6 @@ function brandLabel(value: string) {
     INA: 'INA',
     TIFON: 'Tifon',
     CRODUX: 'Crodux',
-  }
-
-  return labels[key] || value
-}
-
-function countryName(value: string) {
-  const key = normalizeFilterValue(value)
-  const labels: Record<string, string> = {
-    SI: 'Slovenija',
-    HR: 'Hrvaška',
-    AT: 'Avstrija',
   }
 
   return labels[key] || value
@@ -288,7 +251,6 @@ export default function Home() {
   const [radius, setRadius] = useState(25)
   const [amount, setAmount] = useState(50)
   const [brand, setBrand] = useState('ALL')
-  const [country, setCountry] = useState('ALL')
   const [sortBy, setSortBy] = useState<SortBy>('smart')
   const [appMode, setAppMode] = useState<'nearby' | 'route'>('nearby')
   const [showAdvanced, setShowAdvanced] = useState(false)
@@ -314,35 +276,12 @@ export default function Home() {
 
   const loading = status === 'location' || status === 'routing'
 
-  const countryOptions = useMemo(() => {
-    if (!results.length) return COUNTRIES
-
-    const available = new Set(
-      results
-        .map((item) => normalizeFilterValue(item.country_code))
-        .filter(Boolean)
-    )
-
-    return [
-      ['ALL', 'Vse države'],
-      ...COUNTRIES
-        .filter(([value]) => value !== 'ALL' && available.has(value))
-        .map(([value]) => [value, countryName(value)]),
-    ]
-  }, [results])
-
-  const brandSourceResults = useMemo(() => {
-    return country === 'ALL'
-      ? results
-      : results.filter((item) => countryMatches(item.country_code, country))
-  }, [results, country])
-
   const brandOptions = useMemo(() => {
-    if (!brandSourceResults.length) return [['ALL', 'Vse znamke']]
+    if (!results.length) return [['ALL', 'Vse znamke']]
 
     const available = new Map<string, string>()
 
-    for (const item of brandSourceResults) {
+    for (const item of results) {
       const key = inferBrandKey(item)
       if (!key) continue
       available.set(key, brandLabel(key))
@@ -352,13 +291,8 @@ export default function Home() {
       ['ALL', 'Vse znamke'],
       ...Array.from(available.entries()).sort((a, b) => a[1].localeCompare(b[1])),
     ]
-  }, [brandSourceResults])
+  }, [results])
 
-  useEffect(() => {
-    if (country === 'ALL') return
-    if (countryOptions.some(([value]) => value === country)) return
-    setCountry('ALL')
-  }, [country, countryOptions])
 
   useEffect(() => {
     if (brand === 'ALL') return
@@ -367,10 +301,9 @@ export default function Home() {
   }, [brand, brandOptions])
 
   const filteredResults = useMemo(() => {
-    return results.filter(
-      (item) => stationBrandMatches(item, brand) && countryMatches(item.country_code, country)
-    )
-  }, [results, brand, country])
+    return results.filter((item) => stationBrandMatches(item, brand))
+  }, [results, brand])
+
 
   const sortedResults = useMemo(() => {
     return sortClientResults(filteredResults, sortBy, includeFuel, includePath, includeTime)
@@ -424,7 +357,6 @@ async function loadMoreResults() {
       radius: String(radius),
       amount: String(amount),
       brand: 'ALL',
-      country: 'ALL',
       mode: appMode,
       sortBy,
       batch: 'more',
@@ -460,7 +392,6 @@ async function loadMoreResults() {
       sort_by: sortBy,
       radius,
       fuel_type: fuelType,
-      country,
       brand,
     })
   } catch {
@@ -468,7 +399,6 @@ async function loadMoreResults() {
       sort_by: sortBy,
       radius,
       fuel_type: fuelType,
-      country,
       brand,
     })
     setHasMore(false)
@@ -500,7 +430,6 @@ async function loadMoreResults() {
           radius: String(radius),
           amount: String(amount),
           brand: 'ALL',
-          country: 'ALL',
           mode: appMode,
           batch: 'initial',
         })
@@ -527,7 +456,6 @@ async function loadMoreResults() {
           radius,
           amount,
           brand,
-          country,
           results_count: Number(json.results?.length || 0),
           has_more: Boolean(json.has_more),
         })
@@ -540,7 +468,6 @@ async function loadMoreResults() {
           radius,
           amount,
           brand,
-          country,
         })
 
         setStatus('error')
@@ -663,10 +590,7 @@ async function loadMoreResults() {
             setIncludeTime={setIncludeTime}
             brand={brand}
             setBrand={setBrand}
-            country={country}
-            setCountry={setCountry}
             brandOptions={brandOptions}
-            countryOptions={countryOptions}
           />
 
           <ResultPanel
@@ -709,10 +633,7 @@ function HeroSearch({
   setAmount,
   brand,
   setBrand,
-  country,
-  setCountry,
   brandOptions,
-  countryOptions,
   appMode,
   setAppMode,
   showAdvanced,
@@ -748,7 +669,7 @@ function HeroSearch({
       </h1>
 
       <p className="mt-5 max-w-lg text-base leading-relaxed text-white/60 sm:text-lg">
-        Odpri app, dovoli lokacijo in Tankaj.si sam izračuna najboljšo izbiro. Gorivo in radij preračunamo, filtre pa nato uporabiš takoj brez ponovnega čakanja.
+        Odpri app, dovoli lokacijo in Tankaj.si sam izračuna najboljšo izbiro. Gorivo in radij preračunamo, znamko pa lahko nato filtriraš takoj brez ponovnega čakanja.
       </p>
 
       <ModeSwitch appMode={appMode} setAppMode={setAppMode} />
@@ -777,8 +698,7 @@ function HeroSearch({
 
           {showAdvanced && (
   <>
-    <SelectDark label="Znamke" value={brand} onChange={setBrand} options={brandOptions} />
-    <SelectDark label="Država" value={country} onChange={setCountry} options={countryOptions} />
+    <SelectDark label="Znamka" value={brand} onChange={setBrand} options={brandOptions} />
   </>
 )}
 
@@ -787,7 +707,7 @@ function HeroSearch({
   onClick={() => setShowAdvanced((v: boolean) => !v)}
   className="h-[56px] sm:h-[64px] w-full rounded-2xl border border-white/10 bg-white/[0.06] px-5 text-left text-[15px] sm:text-[16px] font-semibold text-white/80 flex items-center self-end transition hover:bg-white/[0.10]"
 >
-  {showAdvanced ? 'Skrij filtre' : 'Več filtrov'}
+  {showAdvanced ? 'Skrij znamke' : 'Filtriraj znamko'}
 </button>
 
           <button
@@ -836,7 +756,7 @@ function ResultPanel({
       {loading && <LoadingState status={status} />}
 
       {searched && !loading && status === 'done' && !best && (
-        <EmptyState text="Za ta filter trenutno ni izračunane možnosti. Prikaži vse znamke/države ali osveži iskanje z večjim radijem." />
+        <EmptyState text="Za izbrano znamko trenutno ni izračunane možnosti v izračunanem izboru. Prikaži vse znamke ali naloži dodatne možnosti." />
       )}
 
       {searched && !loading && status === 'error' && (
