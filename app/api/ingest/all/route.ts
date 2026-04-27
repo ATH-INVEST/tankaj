@@ -70,6 +70,7 @@ export async function GET(req: NextRequest) {
   const results = await Promise.all([
     callIngest(origin, '/api/ingest/slovenia'),
     callIngest(origin, '/api/ingest/croatia'),
+    callIngest(origin, '/api/ingest/italy'),
   ])
 
   return NextResponse.json({
