@@ -572,7 +572,7 @@ function HeroSearch({
 
       <div className="mt-5 flex items-center gap-2 text-sm text-white/58">
         <span className="text-[#b9fb6a]">⌖</span>
-        <span>Slovenija, Hrvaška, Avstrija, Italija, Madžarska</span>
+        <span>Slovenija, Hrvaška, Avstrija</span>
       </div>
 
       <h1 className="mt-6 max-w-xl text-[48px] font-black leading-[.93] tracking-[-.055em] sm:text-[64px] lg:text-[72px] xl:text-[78px]">
