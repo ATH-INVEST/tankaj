@@ -374,8 +374,14 @@ if (searchParams.get('debug') === '1') {
       if (!fuelType) continue
 
       const price = parseNumber(getField(row, ['prezzo', 'price']))
-      if (price === null || price <= 0 || price > 5) continue
+if (price === null) continue
 
+if (fuelType === 'PETROL_95' && (price < 1.3 || price > 3.2)) continue
+if (fuelType === 'PETROL_98' && (price < 1.3 || price > 3.5)) continue
+if (fuelType === 'PETROL_100' && (price < 1.3 || price > 3.8)) continue
+if (fuelType === 'DIESEL' && (price < 1.3 || price > 3.2)) continue
+if (fuelType === 'PREMIUM_DIESEL' && (price < 1.3 || price > 3.8)) continue
+if (fuelType === 'LPG' && (price < 0.4 || price > 1.5)) continue
       const sourceUpdatedAt =
         getField(row, [
           'dtComu',
