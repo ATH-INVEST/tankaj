@@ -36,6 +36,9 @@ const BRANDS = [
   ['MOL', 'MOL'],
   ['SHELL', 'Shell'],
   ['OMV', 'OMV'],
+  ['TURMÖL', 'Turmöl'],
+  ['JET', 'JET'],
+  ['AVIA', 'Avia'],
   ['MAXEN', 'Maxen'],
   ['INA', 'INA'],
   ['TIFON', 'Tifon'],
@@ -46,8 +49,6 @@ const COUNTRIES = [
   ['SI', 'Slovenija'],
   ['HR', 'Hrvaška'],
   ['AT', 'Avstrija'],
-  ['IT', 'Italija'],
-  ['HU', 'Madžarska'],
 ]
 
 const sortOptions: [SortBy, string][] = [
@@ -336,6 +337,7 @@ async function loadMoreResults() {
           brand,
           country,
           mode: appMode,
+          sortBy,
           batch: 'initial',
         })
 
@@ -380,7 +382,7 @@ async function loadMoreResults() {
         setStatus('error')
       }
     },
-    [fuelType, radius, amount, brand, country, appMode]
+    [fuelType, radius, amount, brand, country, appMode, sortBy]
   )
 
 

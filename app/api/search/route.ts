@@ -5,6 +5,7 @@ import { getDrivingDistance } from '@/lib/ors'
 type RouteSource = 'openrouteservice' | 'osrm'
 type SortBy = 'smart' | 'price' | 'distance'
 type Batch = 'initial' | 'more'
+type AustriaFuelType = 'DIE' | 'SUP' | 'GAS'
 
 type Result = {
   location_id: string
@@ -19,10 +20,26 @@ type Result = {
   estimated_drive_minutes?: number | null
   fuel_type: string
   price: number
-  total_cost?: number | null
   fuel_cost?: number | null
   source?: string | null
   captured_at?: string | null
+}
+
+type AustriaStation = {
+  id: number
+  name: string
+  location?: {
+    address?: string
+    postalCode?: string
+    city?: string
+    latitude?: number
+    longitude?: number
+  }
+  prices?: {
+    fuelType?: string
+    amount?: number
+    label?: string
+  }[]
 }
 
 type RoutedResult = Result & {
@@ -68,6 +85,7 @@ function normalizeBrand(value?: string | null) {
 }
 
 function inferUserCountry(lat: number, lng: number) {
+  if (lat >= 46.3 && lat <= 49.2 && lng >= 9.4 && lng <= 17.3) return 'AT'
   if (lat >= 45 && lat <= 47 && lng >= 13 && lng <= 17) return 'SI'
   if (lat >= 42 && lat <= 47 && lng >= 13 && lng <= 20) return 'HR'
   return null
@@ -126,6 +144,140 @@ function buildMoreCandidatePool(rows: Result[], amount: number, sortBy: SortBy, 
   })
 
   return sorted.slice(offset, offset + MORE_LIMIT)
+}
+
+function mapAustriaFuelType(type: string): AustriaFuelType {
+  const value = type.toUpperCase()
+
+  if (
+    value.includes('DIESEL') ||
+    value.includes('DIE') ||
+    value.includes('DIZEL')
+  ) {
+    return 'DIE'
+  }
+
+  if (
+    value.includes('CNG') ||
+    value.includes('GAS')
+  ) {
+    return 'GAS'
+  }
+
+  return 'SUP'
+}
+
+function normalizeAustriaFuelType(fuel: AustriaFuelType) {
+  if (fuel === 'DIE') return 'diesel'
+  if (fuel === 'SUP') return 'bencin95'
+  return 'cng'
+}
+
+function normalizeAustriaBrand(name: string): string | null {
+  const upper = name.toUpperCase()
+
+  if (upper.includes('OMV')) return 'OMV'
+  if (upper.includes('SHELL')) return 'SHELL'
+  if (upper.includes('JET')) return 'JET'
+  if (upper.includes('AVIA')) return 'AVIA'
+  if (upper.includes('ENI') || upper.includes('AGIP')) return 'ENI'
+  if (upper.includes('BP')) return 'BP'
+  if (upper.includes('TURMÖL') || upper.includes('TURMOEL')) return 'TURMÖL'
+
+  return null
+}
+
+function getAustriaPrice(station: AustriaStation, fuel: AustriaFuelType): number | null {
+  const prices = station.prices ?? []
+  const match = prices.find((price) => price.fuelType === fuel)
+
+  if (typeof match?.amount === 'number') return match.amount
+
+  return null
+}
+
+function haversineKm(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+) {
+  const R = 6371
+  const dLat = (lat2 - lat1) * (Math.PI / 180)
+  const dLon = (lon2 - lon1) * (Math.PI / 180)
+
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * (Math.PI / 180)) *
+      Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLon / 2) ** 2
+
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+async function fetchAustriaRows(
+  lat: number,
+  lng: number,
+  type: string
+): Promise<Result[]> {
+  const fuel = mapAustriaFuelType(type)
+
+  const url = new URL(
+    'https://api.e-control.at/sprit/1.0/search/gas-stations/by-address'
+  )
+
+  url.searchParams.set('latitude', String(lat))
+  url.searchParams.set('longitude', String(lng))
+  url.searchParams.set('fuelType', fuel)
+  url.searchParams.set('includeClosed', 'false')
+
+  try {
+    const res = await fetch(url.toString(), {
+      headers: {
+        accept: 'application/json',
+      },
+      cache: 'no-store',
+    })
+
+    if (!res.ok) return []
+
+    const raw = (await res.json()) as AustriaStation[]
+
+    return raw
+      .map((station): Result | null => {
+        const price = getAustriaPrice(station, fuel)
+
+        if (price === null) return null
+
+        const stationLat = station.location?.latitude
+        const stationLng = station.location?.longitude
+
+        if (typeof stationLat !== 'number' || typeof stationLng !== 'number') {
+          return null
+        }
+
+        return {
+          location_id: `AT_${station.id}`,
+          name: station.name,
+          brand: normalizeAustriaBrand(station.name),
+          address: station.location?.address ?? null,
+          city: station.location?.city ?? null,
+          country_code: 'AT',
+          lat: stationLat,
+          lng: stationLng,
+          distance_km: round(haversineKm(lat, lng, stationLat, stationLng)),
+          estimated_drive_minutes: null,
+          fuel_type: normalizeAustriaFuelType(fuel),
+          price,
+          fuel_cost: null,
+          source: 'e-control.at',
+          captured_at: new Date().toISOString(),
+        }
+      })
+      .filter((item): item is Result => item !== null)
+  } catch {
+    return []
+  }
 }
 
 async function mapWithConcurrency<T, R>(
@@ -298,7 +450,14 @@ function score(
   userCountry: string | null
 ) {
   return rows.map((r) => {
-    const fuelCost = round(n(r.fuel_cost ?? r.total_cost, r.price * amount))
+    const existingFuelCost =
+      typeof r.fuel_cost === 'number' && Number.isFinite(r.fuel_cost) && r.fuel_cost > 0
+        ? r.fuel_cost
+        : typeof r.total_cost === 'number' && Number.isFinite(r.total_cost) && r.total_cost > 0
+          ? r.total_cost
+          : null
+
+    const fuelCost = round(existingFuelCost ?? r.price * amount)
     const travelFuelCost = round((r.distance_km * consumption * r.price) / 100)
     const timeCost = round((r.estimated_drive_minutes / 60) * timeValue)
     const effectiveTotalCost = round(fuelCost + travelFuelCost + timeCost)
@@ -377,7 +536,7 @@ export async function GET(req: Request) {
   const brandFilter = normalizeBrand(
     searchParams.get('brand') || searchParams.get('brandFilter')
   )
-const countryFilter = searchParams.get('country') || 'ALL'
+  const countryFilter = searchParams.get('country') || 'ALL'
 
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return NextResponse.json(
@@ -410,16 +569,24 @@ const countryFilter = searchParams.get('country') || 'ALL'
 
   const userCountry = inferUserCountry(lat, lng)
 
-  let rows = ((data || []) as Result[])
+  const dbRows = ((data || []) as Result[])
     .filter((r) => Number.isFinite(Number(r.price)))
     .filter(hasCoords)
+
+  const austriaRows =
+    countryFilter === 'ALL' || countryFilter === 'AT'
+      ? await fetchAustriaRows(lat, lng, type)
+      : []
+
+  let rows = uniqueByLocation([...dbRows, ...austriaRows])
 
   if (brandFilter && brandFilter !== 'ALL') {
     rows = rows.filter((r) => normalizeBrand(r.brand) === brandFilter)
   }
-if (countryFilter && countryFilter !== 'ALL') {
-  rows = rows.filter((r) => r.country_code === countryFilter)
-}
+
+  if (countryFilter && countryFilter !== 'ALL') {
+    rows = rows.filter((r) => r.country_code === countryFilter)
+  }
 
   const candidatePool =
     batch === 'more'
@@ -457,6 +624,8 @@ if (countryFilter && countryFilter !== 'ALL') {
     next_offset: nextOffset,
     counts: {
       all_considered_count: rows.length,
+      db_count: dbRows.length,
+      austria_count: austriaRows.length,
       candidate_pool_count: candidatePool.length,
       routed_count: routed.length,
       valid_count: valid.length,
