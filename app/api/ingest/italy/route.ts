@@ -290,6 +290,29 @@ export async function GET(req: NextRequest) {
   const startedAt = new Date().toISOString()
   const { searchParams } = new URL(req.url)
   const limit = Number(searchParams.get('limit') || 0)
+  const force = searchParams.get('force') === '1'
+
+  const { data: lastRun } = await supabase
+    .from('source_sync_runs')
+    .select('id,finished_at')
+    .eq('source', SOURCE)
+    .eq('status', 'success')
+    .gte('finished_at', new Date(Date.now() - 55 * 60 * 1000).toISOString())
+    .order('finished_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (!force && lastRun) {
+    return NextResponse.json({
+      success: true,
+      source: SOURCE,
+      skipped: true,
+      reason: 'rate_limited',
+      message:
+        'Italy ingest skipped because it was already successfully updated less than 55 minutes ago.',
+      lastFinishedAt: lastRun.finished_at,
+    })
+  }
 
   const syncRun = await supabase
     .from('source_sync_runs')
@@ -335,15 +358,15 @@ export async function GET(req: NextRequest) {
     const stationRowsRaw = parseCsv(stationsText)
     const priceRows = parseCsv(pricesText)
 
-if (searchParams.get('debug') === '1') {
-  return NextResponse.json({
-    success: true,
-    stationHeaders: Object.keys(stationRowsRaw[0] || {}),
-    priceHeaders: Object.keys(priceRows[0] || {}),
-    firstStation: stationRowsRaw[0] || null,
-    firstPrice: priceRows[0] || null,
-  })
-}
+    if (searchParams.get('debug') === '1') {
+      return NextResponse.json({
+        success: true,
+        stationHeaders: Object.keys(stationRowsRaw[0] || {}),
+        priceHeaders: Object.keys(priceRows[0] || {}),
+        firstStation: stationRowsRaw[0] || null,
+        firstPrice: priceRows[0] || null,
+      })
+    }
 
     const stationRows = limit > 0 ? stationRowsRaw.slice(0, limit) : stationRowsRaw
 
@@ -374,14 +397,14 @@ if (searchParams.get('debug') === '1') {
       if (!fuelType) continue
 
       const price = parseNumber(getField(row, ['prezzo', 'price']))
-if (price === null) continue
+      if (price === null) continue
 
-if (fuelType === 'PETROL_95' && (price < 1.3 || price > 3.2)) continue
-if (fuelType === 'PETROL_98' && (price < 1.3 || price > 3.5)) continue
-if (fuelType === 'PETROL_100' && (price < 1.3 || price > 3.8)) continue
-if (fuelType === 'DIESEL' && (price < 1.3 || price > 3.2)) continue
-if (fuelType === 'PREMIUM_DIESEL' && (price < 1.3 || price > 3.8)) continue
-if (fuelType === 'LPG' && (price < 0.4 || price > 1.5)) continue
+      if (fuelType === 'PETROL_95' && (price < 1.3 || price > 3.2)) continue
+      if (fuelType === 'PETROL_98' && (price < 1.3 || price > 3.5)) continue
+      if (fuelType === 'PETROL_100' && (price < 1.3 || price > 3.8)) continue
+      if (fuelType === 'DIESEL' && (price < 1.3 || price > 3.2)) continue
+      if (fuelType === 'PREMIUM_DIESEL' && (price < 1.3 || price > 3.8)) continue
+      if (fuelType === 'LPG' && (price < 0.4 || price > 1.5)) continue
       const sourceUpdatedAt =
         getField(row, [
           'dtComu',
@@ -519,21 +542,26 @@ if (fuelType === 'LPG' && (price < 0.4 || price > 1.5)) continue
         if (!locationId) return null
 
         return {
-  location_id: locationId,
-  fuel_type: p.fuelType,
-  price: p.price,
-  currency: 'EUR',
-  source: SOURCE,
-  confidence: 'verified',
-  raw_product_name: p.rawProductName,
-  source_updated_at: parseItalianDate(p.sourceUpdatedAt) || now,
-  captured_at: now,
-}
+          location_id: locationId,
+          fuel_type: p.fuelType,
+          price: p.price,
+          currency: 'EUR',
+          source: SOURCE,
+          confidence: 'verified',
+          raw_product_name: p.rawProductName,
+          source_updated_at: parseItalianDate(p.sourceUpdatedAt) || now,
+          captured_at: now,
+        }
       })
       .filter((row): row is NonNullable<typeof row> => row !== null)
 
-    for (const part of chunk(pricePayloads, PRICE_BATCH_SIZE)) {
-      const { error } = await supabase.from('fuel_prices').insert(part)
+        for (const part of chunk(pricePayloads, PRICE_BATCH_SIZE)) {
+      const { error } = await supabase
+        .from('fuel_prices')
+        .upsert(part, {
+          onConflict: 'location_id,fuel_type,source,source_updated_at',
+        })
+
       if (error) throw error
     }
 
