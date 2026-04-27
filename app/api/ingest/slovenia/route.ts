@@ -6,6 +6,8 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 const GORIVA_URL = 'https://goriva.si/api/v1/search/'
+const SOURCE = 'goriva.si'
+const BATCH_SIZE = 500
 
 const FUEL_MAP: Record<string, string> = {
   '95': 'PETROL_95',
@@ -32,12 +34,45 @@ type GorivaStation = {
   zip_code?: string
 }
 
-async function fetchAllGorivaPages() {
-  let url = `${GORIVA_URL}?position=46.1512%2C14.9955&radius=200000&o=distance`
+type LocationRow = {
+  id: string
+  source_id: string | null
+}
+
+function isAuthorized(req: NextRequest) {
+  if (process.env.NODE_ENV !== 'production') return true
+
+  const cronSecret = process.env.CRON_SECRET
+  const authHeader = req.headers.get('authorization')
+  const userAgent = req.headers.get('user-agent') || ''
+
+  if (userAgent.toLowerCase().includes('vercel-cron')) {
+    return true
+  }
+
+  if (!cronSecret) return false
+
+  return authHeader === `Bearer ${cronSecret}`
+}
+
+function chunk<T>(items: T[], size: number) {
+  const chunks: T[][] = []
+
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size))
+  }
+
+  return chunks
+}
+
+async function fetchAllGorivaPages(): Promise<GorivaStation[]> {
+  let url: string | null = `${GORIVA_URL}?position=46.1512%2C14.9955&radius=200000&o=distance`
   const all: GorivaStation[] = []
 
-  while (url) {
-    const res = await fetch(url, {
+  while (url !== null) {
+    const currentUrl: string = url
+
+    const res: Response = await fetch(currentUrl, {
       headers: {
         accept: 'application/json',
         'user-agent': 'Tankaj.si importer',
@@ -49,36 +84,60 @@ async function fetchAllGorivaPages() {
       throw new Error(`goriva.si returned ${res.status}`)
     }
 
-    const json = await res.json()
+    const json: {
+      results?: GorivaStation[]
+      next?: string | null
+    } = await res.json()
+
     all.push(...(json.results || []))
-    url = json.next
+    url = json.next || null
   }
 
   return all
 }
 
-function isAuthorized(req: NextRequest) {
-  const cronSecret = process.env.CRON_SECRET
+function buildLocationPayload(station: GorivaStation) {
+  const brand = station.name.split(' ')[0] || null
 
-  if (process.env.NODE_ENV !== 'production') return true
-  if (!cronSecret) return false
-
-  return req.headers.get('authorization') === `Bearer ${cronSecret}`
+  return {
+    type: 'fuel_station',
+    name: station.name,
+    brand,
+    operator: brand,
+    address: station.address,
+    city: null,
+    country_code: 'SI',
+    lat: station.lat,
+    lng: station.lng,
+    geo: `POINT(${station.lng} ${station.lat})`,
+    source: SOURCE,
+    source_id: String(station.pk),
+    opening_hours: station.open_hours ? { raw: station.open_hours } : null,
+    metadata: {
+      zip_code: station.zip_code || null,
+      distance: station.distance || null,
+      direction: station.direction || null,
+      raw: station,
+    },
+  }
 }
 
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
-    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json(
+      { success: false, error: 'Unauthorized' },
+      { status: 401 }
+    )
   }
 
   const startedAt = new Date().toISOString()
 
-  console.log('Tankaj.si INGEST RUN:', startedAt)
+  console.log('Tankaj.si SI INGEST RUN:', startedAt)
 
   const syncRun = await supabase
     .from('source_sync_runs')
     .insert({
-      source: 'goriva.si',
+      source: SOURCE,
       status: 'running',
       started_at: startedAt,
     })
@@ -88,69 +147,71 @@ export async function GET(req: NextRequest) {
   try {
     const stations = await fetchAllGorivaPages()
 
-    let locationsUpserted = 0
-    let pricesInserted = 0
+    const locationPayloads = stations.map(buildLocationPayload)
 
-    for (const station of stations) {
-      const brand = station.name.split(' ')[0] || null
+    for (const batch of chunk(locationPayloads, BATCH_SIZE)) {
+      const { error } = await supabase.from('locations').upsert(batch, {
+        onConflict: 'source,source_id',
+      })
 
-      const locationPayload = {
-        type: 'fuel_station',
-        name: station.name,
-        brand,
-        operator: brand,
-        address: station.address,
-        city: null,
-        country_code: 'SI',
-        lat: station.lat,
-        lng: station.lng,
-        geo: `POINT(${station.lng} ${station.lat})`,
-        source: 'goriva.si',
-        source_id: String(station.pk),
-        opening_hours: station.open_hours ? { raw: station.open_hours } : null,
-        metadata: {
-          zip_code: station.zip_code || null,
-          distance: station.distance || null,
-          direction: station.direction || null,
-          raw: station,
-        },
-      }
+      if (error) throw error
+    }
 
-      const { data: location, error: locationError } = await supabase
+    const sourceIds = stations.map((station) => String(station.pk))
+
+    const locationRows: LocationRow[] = []
+
+    for (const batch of chunk(sourceIds, BATCH_SIZE)) {
+      const { data, error } = await supabase
         .from('locations')
-        .upsert(locationPayload, {
-          onConflict: 'source,source_id',
-        })
-        .select('id')
-        .single()
+        .select('id,source_id')
+        .eq('source', SOURCE)
+        .in('source_id', batch)
 
-      if (locationError) throw locationError
+      if (error) throw error
 
-      locationsUpserted++
+      locationRows.push(...((data || []) as LocationRow[]))
+    }
 
-      for (const [rawFuelName, price] of Object.entries(station.prices || {})) {
-        if (price === null) continue
+    const locationIdBySourceId = new Map(
+      locationRows
+        .filter((row) => row.source_id)
+        .map((row) => [String(row.source_id), row.id])
+    )
 
-        const fuelType = FUEL_MAP[rawFuelName]
-        if (!fuelType) continue
+    const now = new Date().toISOString()
 
-        const { error: priceError } = await supabase
-          .from('fuel_prices')
-          .insert({
-            location_id: location.id,
+    const pricePayloads = stations.flatMap((station) => {
+      const locationId = locationIdBySourceId.get(String(station.pk))
+
+      if (!locationId) return []
+
+      return Object.entries(station.prices || [])
+        .map(([rawFuelName, price]) => {
+          if (price === null) return null
+
+          const fuelType = FUEL_MAP[rawFuelName]
+          if (!fuelType) return null
+
+          return {
+            location_id: locationId,
             fuel_type: fuelType,
             price,
             currency: 'EUR',
-            source: 'goriva.si',
+            source: SOURCE,
             confidence: 'verified',
             raw_product_name: rawFuelName,
-            source_updated_at: new Date().toISOString(),
-          })
+            source_updated_at: now,
+            captured_at: now,
+          }
+        })
+        .filter(Boolean)
+    })
 
-        if (priceError) throw priceError
+    for (const batch of chunk(pricePayloads, BATCH_SIZE)) {
+      const { error } = await supabase.from('fuel_prices').insert(batch)
 
-        pricesInserted++
-      }
+      if (error) throw error
     }
 
     if (syncRun.data?.id) {
@@ -160,24 +221,24 @@ export async function GET(req: NextRequest) {
           status: 'success',
           finished_at: new Date().toISOString(),
           records_found: stations.length,
-          records_updated: locationsUpserted,
+          records_updated: locationPayloads.length,
         })
         .eq('id', syncRun.data.id)
     }
 
     return NextResponse.json({
       success: true,
-      source: 'goriva.si',
+      source: SOURCE,
       startedAt,
       finishedAt: new Date().toISOString(),
       stationsFound: stations.length,
-      locationsUpserted,
-      pricesInserted,
+      locationsUpserted: locationPayloads.length,
+      pricesInserted: pricePayloads.length,
     })
   } catch (err) {
-    const message = err instanceof Error ? err.message : JSON.stringify(err, null, 2)
+    const message = err instanceof Error ? err.message : JSON.stringify(err)
 
-    console.error('Tankaj.si INGEST ERROR:', message)
+    console.error('Tankaj.si SI INGEST ERROR:', message)
 
     if (syncRun.data?.id) {
       await supabase
@@ -190,6 +251,9 @@ export async function GET(req: NextRequest) {
         .eq('id', syncRun.data.id)
     }
 
-    return NextResponse.json({ success: false, error: message }, { status: 500 })
+    return NextResponse.json(
+      { success: false, source: SOURCE, error: message },
+      { status: 500 }
+    )
   }
 }

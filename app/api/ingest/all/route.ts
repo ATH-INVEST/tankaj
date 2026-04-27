@@ -4,6 +4,8 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
+const INGEST_TIMEOUT_MS = 55_000
+
 function isAuthorized(req: NextRequest) {
   if (process.env.NODE_ENV !== 'production') return true
 
@@ -11,8 +13,6 @@ function isAuthorized(req: NextRequest) {
   const authHeader = req.headers.get('authorization')
   const userAgent = req.headers.get('user-agent') || ''
 
-  // Vercel Cron ne pošilja našega Authorization headerja,
-  // zato mu dovolimo dostop po uradnem user-agentu.
   if (userAgent.toLowerCase().includes('vercel-cron')) {
     return true
   }
@@ -23,39 +23,59 @@ function isAuthorized(req: NextRequest) {
 }
 
 async function callIngest(origin: string, path: string) {
-  const res = await fetch(`${origin}${path}`, {
-    method: 'GET',
-    headers: {
-      authorization: `Bearer ${process.env.CRON_SECRET}`,
-    },
-    cache: 'no-store',
-  })
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), INGEST_TIMEOUT_MS)
 
-  const json = await res.json().catch(() => null)
+  try {
+    const res = await fetch(`${origin}${path}`, {
+      method: 'GET',
+      headers: {
+        authorization: `Bearer ${process.env.CRON_SECRET || ''}`,
+      },
+      cache: 'no-store',
+      signal: controller.signal,
+    })
 
-  return {
-    path,
-    ok: res.ok,
-    status: res.status,
-    response: json,
+    const json = await res.json().catch(() => null)
+
+    return {
+      path,
+      ok: res.ok,
+      status: res.status,
+      response: json,
+    }
+  } catch (err) {
+    return {
+      path,
+      ok: false,
+      status: 0,
+      error: err instanceof Error ? err.message : String(err),
+    }
+  } finally {
+    clearTimeout(timeout)
   }
 }
 
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
-    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json(
+      { success: false, error: 'Unauthorized' },
+      { status: 401 }
+    )
   }
 
+  const startedAt = new Date().toISOString()
   const origin = new URL(req.url).origin
 
-  const results = []
-
-  results.push(await callIngest(origin, '/api/ingest/slovenia'))
-  results.push(await callIngest(origin, '/api/ingest/croatia'))
+  const results = await Promise.all([
+    callIngest(origin, '/api/ingest/slovenia'),
+    callIngest(origin, '/api/ingest/croatia'),
+  ])
 
   return NextResponse.json({
     success: results.every((r) => r.ok),
-    startedAt: new Date().toISOString(),
+    startedAt,
+    finishedAt: new Date().toISOString(),
     results,
   })
 }
