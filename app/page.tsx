@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { trackEvent } from '@/lib/analytics'
 
 type Result = {
   location_id: string
@@ -138,6 +139,44 @@ function reasonBySort(sortBy: SortBy) {
   return 'Najboljša kombinacija izbranih stroškov.'
 }
 
+function buildCrossBorderInsight(
+  results: Result[],
+  best: Result | null,
+  includeFuel: boolean,
+  includePath: boolean,
+  includeTime: boolean
+) {
+  if (!best || !best.country_code) return null
+
+  const homeCountry = results.find((r) => !r.is_cross_border)?.country_code || 'SI'
+  const homeOptions = results.filter((r) => r.country_code === homeCountry)
+  const crossBorderOptions = results.filter((r) => r.country_code && r.country_code !== homeCountry)
+
+  if (!homeOptions.length || !crossBorderOptions.length) return null
+
+  const bestHome = [...homeOptions].sort(
+    (a, b) => scoreItem(a, includeFuel, includePath, includeTime) - scoreItem(b, includeFuel, includePath, includeTime)
+  )[0]
+
+  const bestCross = [...crossBorderOptions].sort(
+    (a, b) => scoreItem(a, includeFuel, includePath, includeTime) - scoreItem(b, includeFuel, includePath, includeTime)
+  )[0]
+
+  if (!bestHome || !bestCross) return null
+
+  const saving = Number(
+    (scoreItem(bestHome, includeFuel, includePath, includeTime) - scoreItem(bestCross, includeFuel, includePath, includeTime)).toFixed(2)
+  )
+
+  return {
+    saving,
+    homeCountry,
+    crossCountry: bestCross.country_code,
+    station: bestCross,
+    isWorthIt: saving > 1,
+  }
+}
+
 export default function Home() {
   const [fuelType, setFuelType] = useState('PETROL_95')
   const [radius, setRadius] = useState(50)
@@ -196,6 +235,10 @@ export default function Home() {
     return Number((nearestScore - bestScore).toFixed(2))
   }, [best, nearest, includeFuel, includePath, includeTime])
 
+  const crossBorderInsight = useMemo(() => {
+    return buildCrossBorderInsight(results, best, includeFuel, includePath, includeTime)
+  }, [results, best, includeFuel, includePath, includeTime])
+
   const lastUpdated = useMemo(() => {
     if (!best?.captured_at) return null
     const diffMin = Math.max(0, Math.round((Date.now() - new Date(best.captured_at).getTime()) / 60000))
@@ -216,10 +259,10 @@ async function loadMoreResults() {
       type: fuelType,
       radius: String(radius),
       amount: String(amount),
-     brand,
-country,
-mode: appMode,
-sortBy,
+      brand,
+      country,
+      mode: appMode,
+      sortBy,
       batch: 'more',
       offset: String(nextOffset),
     })
@@ -231,6 +274,8 @@ sortBy,
     }
 
     const json = await res.json()
+    const receivedCount = Number(json.results?.length || 0)
+    const next = Number(json.next_offset || nextOffset + 5)
 
     setResults((prev) => {
       const map = new Map<string, Result>()
@@ -242,64 +287,102 @@ sortBy,
     setNextOffset((current) => json.next_offset || current + 5)
     setHasMore(Boolean(json.has_more))
     setShowOthers(true)
+
+    trackEvent('load_more_results', {
+      next_offset: next,
+      received_count: receivedCount,
+      sort_by: sortBy,
+      radius,
+      fuel_type: fuelType,
+      country,
+      brand,
+    })
   } catch {
+    trackEvent('load_more_failed', {
+      sort_by: sortBy,
+      radius,
+      fuel_type: fuelType,
+      country,
+      brand,
+    })
     setHasMore(false)
   } finally {
     setLoadingMore(false)
   }
 }
 
+
   const runSearch = useCallback(
-  async (point: { lat: number; lng: number }) => {
-    if (appMode === 'route') return
+    async (point: { lat: number; lng: number }) => {
+      if (appMode === 'route') return
 
-    const requestId = ++activeRequestId.current
+      const requestId = ++activeRequestId.current
 
-    abortRef.current?.abort()
-    const controller = new AbortController()
-    abortRef.current = controller
+      abortRef.current?.abort()
+      const controller = new AbortController()
+      abortRef.current = controller
 
-    setSearched(true)
-    setShowOthers(false)
-    setStatus('routing')
+      setSearched(true)
+      setShowOthers(false)
+      setStatus('routing')
 
-    try {
-      const params = new URLSearchParams({
-        lat: String(point.lat),
-        lng: String(point.lng),
-        type: fuelType,
-        radius: String(radius),
-        amount: String(amount),
-        brand,
-country,
-mode: appMode,
-batch: 'initial',
-      })
+      try {
+        const params = new URLSearchParams({
+          lat: String(point.lat),
+          lng: String(point.lng),
+          type: fuelType,
+          radius: String(radius),
+          amount: String(amount),
+          brand,
+          country,
+          mode: appMode,
+          batch: 'initial',
+        })
 
-      const res = await fetch(`/api/search?${params.toString()}`, {
-        signal: controller.signal,
-      })
+        const res = await fetch(`/api/search?${params.toString()}`, {
+          signal: controller.signal,
+        })
 
-      if (!res.ok) {
-  throw new Error('Search failed')
-}
+        if (!res.ok) {
+          throw new Error('Search failed')
+        }
 
-const json = await res.json()
+        const json = await res.json()
 
-      if (requestId !== activeRequestId.current) return
+        if (requestId !== activeRequestId.current) return
 
-      setResults(json.results || [])
-      setNextOffset(json.next_offset || 6)
-      setHasMore(Boolean(json.has_more))
-      setStatus('done')
-    } catch (err: any) {
-      if (err?.name === 'AbortError') return
-      if (requestId !== activeRequestId.current) return
-      setStatus('error')
-    }
-  },
-  [fuelType, radius, amount, brand, country, appMode]
-)
+        setResults(json.results || [])
+        setNextOffset(json.next_offset || 6)
+        setHasMore(Boolean(json.has_more))
+        setStatus('done')
+
+        trackEvent('search_completed', {
+          fuel_type: fuelType,
+          radius,
+          amount,
+          brand,
+          country,
+          results_count: Number(json.results?.length || 0),
+          has_more: Boolean(json.has_more),
+        })
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return
+        if (requestId !== activeRequestId.current) return
+
+        trackEvent('search_failed', {
+          fuel_type: fuelType,
+          radius,
+          amount,
+          brand,
+          country,
+        })
+
+        setStatus('error')
+      }
+    },
+    [fuelType, radius, amount, brand, country, appMode]
+  )
+
 
   const requestLocationAndSearch = useCallback(() => {
   if (appMode === 'route') {
@@ -318,12 +401,15 @@ const json = await res.json()
 
   navigator.geolocation.getCurrentPosition(
     (position) => {
+      trackEvent('location_allowed')
+
       setCoords({
         lat: position.coords.latitude,
         lng: position.coords.longitude,
       })
     },
     () => {
+      trackEvent('location_denied')
       alert('Lokacije ni bilo mogoče pridobiti. Dovoli dostop do lokacije in poskusi znova.')
       setStatus('error')
     },
@@ -354,6 +440,11 @@ const json = await res.json()
   async function shareResult() {
     if (!best) return
 
+    trackEvent('share_result', {
+      station_country: best.country_code || null,
+      station_brand: best.brand || null,
+    })
+
     const text =
       savingVsNearest > 0.2
         ? `Tankaj.si mi je našel boljšo izbiro za tankanje. Prihranek: približno ${savingVsNearest.toFixed(2)} €.`
@@ -372,10 +463,14 @@ const json = await res.json()
   function handleSortChange(value: SortBy) {
     setSortBy(value)
     setShowOthers(false)
+
+    trackEvent('sort_changed', {
+      sort_by: value,
+    })
   }
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#06140f] text-white">
+    <main id="top" className="min-h-screen overflow-x-hidden bg-[#06140f] pb-24 text-white md:pb-0">
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(185,251,106,.23),transparent_28%),radial-gradient(circle_at_92%_12%,rgba(44,120,76,.24),transparent_34%),linear-gradient(180deg,#071a12_0%,#04100b_100%)]" />
 
       <section className="relative mx-auto flex min-h-screen max-w-[1320px] flex-col px-4 py-4 sm:px-6 lg:px-8 lg:py-7">
@@ -427,6 +522,7 @@ const json = await res.json()
 hasMore={hasMore}
 loadingMore={loadingMore}
 loadMoreResults={loadMoreResults}
+crossBorderInsight={crossBorderInsight}
           />
         </div>
 
@@ -564,6 +660,7 @@ function ResultPanel({
   hasMore,
   loadingMore,
   loadMoreResults,
+  crossBorderInsight,
 }: any) {
   return (
     <div className="rounded-[30px] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(185,251,106,.18),transparent_32%),linear-gradient(180deg,rgba(15,48,34,.86),rgba(5,20,14,.88))] p-4 shadow-[0_25px_80px_rgba(0,0,0,.25)] backdrop-blur-2xl sm:p-6 lg:min-h-[720px] lg:p-8">
@@ -614,6 +711,10 @@ function ResultPanel({
             includeTime={includeTime}
           />
 
+          {crossBorderInsight && (
+            <CrossBorderCard insight={crossBorderInsight} mapsUrl={mapsUrl} />
+          )}
+
           {(otherResults.length > 0 || hasMore) && (
             <>
               <div className="mt-4 flex items-center justify-between gap-3">
@@ -640,6 +741,7 @@ function ResultPanel({
                 onClick={() => {
                   if (!showOthers) {
                     setShowOthers(true)
+                    trackEvent('other_options_opened')
                     if (otherResults.length < 5 && hasMore) loadMoreResults()
                     return
                   }
@@ -738,7 +840,19 @@ function BestCard({
       )}
 
       <div className="mt-4 grid grid-cols-2 gap-2">
-        <a href={mapsUrl(item)} target="_blank" rel="noopener noreferrer" className="rounded-2xl bg-white px-4 py-3 text-center text-sm font-black text-[#071a12]">
+        <a
+          href={mapsUrl(item)}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={() =>
+            trackEvent('navigation_clicked', {
+              source: 'winner_card',
+              station_country: item.country_code || null,
+              station_brand: item.brand || null,
+            })
+          }
+          className="rounded-2xl bg-white px-4 py-3 text-center text-sm font-black text-[#071a12]"
+        >
           Navigacija
         </a>
         <button onClick={shareResult} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-black text-white transition hover:bg-white/[0.08]">
@@ -769,7 +883,19 @@ function CompactResult({
   const displayTotal = scoreItem(item, includeFuel, includePath, includeTime)
 
   return (
-    <a href={mapsUrl(item)} target="_blank" rel="noopener noreferrer" className="block rounded-[22px] border border-white/8 bg-white/[0.06] p-3 transition hover:bg-white/[0.09]">
+    <a
+      href={mapsUrl(item)}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={() =>
+        trackEvent('navigation_clicked', {
+          source: 'compact_result',
+          station_country: item.country_code || null,
+          station_brand: item.brand || null,
+        })
+      }
+      className="block rounded-[22px] border border-white/8 bg-white/[0.06] p-3 transition hover:bg-white/[0.09]"
+    >
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-xs font-black ${brandColor(item.brand)}`}>
@@ -894,7 +1020,7 @@ function MiniInfo({ title, text }: { title: string; text: string }) {
 
 function HowItWorks() {
   return (
-    <section className="mt-5 rounded-[30px] border border-white/10 bg-white/[0.055] p-5 backdrop-blur-2xl sm:p-7">
+    <section id="how-it-works" className="mt-5 rounded-[30px] border border-white/10 bg-white/[0.055] p-5 backdrop-blur-2xl sm:p-7">
       <h2 className="text-3xl font-black tracking-tight">Kako deluje?</h2>
       <p className="mt-4 max-w-4xl text-sm leading-relaxed text-white/60 sm:text-base">
         Tankaj.si samodejno izračuna realne poti do črpalk v izbranem radiju. Nato lahko rezultat takoj razvrščaš po priporočilu, najnižji ceni ali najbližji poti. Uporabnik lahko sam določi, ali se pri skupnem strošku upoštevajo gorivo, pot in čas.
@@ -942,6 +1068,69 @@ function ModeSwitch({
         Na poti <span className="ml-1 text-[10px] opacity-70">kmalu</span>
       </button>
     </div>
+  )
+}
+
+
+function CrossBorderCard({
+  insight,
+  mapsUrl,
+}: {
+  insight: {
+    saving: number
+    homeCountry: string
+    crossCountry?: string | null
+    station: Result
+    isWorthIt: boolean
+  }
+  mapsUrl: (item: Result) => string
+}) {
+  return (
+    <a
+      href={mapsUrl(insight.station)}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={() =>
+        trackEvent('navigation_clicked', {
+          source: 'cross_border_card',
+          station_country: insight.station.country_code || null,
+          station_brand: insight.station.brand || null,
+        })
+      }
+      className={`mt-3 block rounded-[22px] border p-4 transition ${
+        insight.isWorthIt
+          ? 'border-[#b9fb6a]/35 bg-[#b9fb6a]/12 hover:bg-[#b9fb6a]/16'
+          : 'border-white/10 bg-white/[0.045] hover:bg-white/[0.07]'
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-xs font-black uppercase tracking-[.22em] text-[#b9fb6a]">
+            Čez mejo
+          </div>
+
+          <div className="mt-1 text-lg font-black text-white">
+            {insight.isWorthIt ? 'Čez mejo se lahko splača.' : 'Čez mejo se trenutno ne splača.'}
+          </div>
+
+          <div className="mt-1 text-sm leading-relaxed text-white/52">
+            {insight.isWorthIt
+              ? `Najboljša možnost čez mejo prihrani približno ${insight.saving.toFixed(
+                  2
+                )} € proti najboljši domači možnosti.`
+              : 'Cene čez mejo niso dovolj boljše, da bi pokrile dodatno pot in čas.'}
+          </div>
+
+          <div className="mt-3 text-sm font-black text-[#b9fb6a]">
+            {insight.station.name} · {countryLabel(insight.crossCountry)}
+          </div>
+        </div>
+
+        <div className="rounded-full bg-white/10 px-3 py-1 text-xs font-black text-white/65">
+          {insight.homeCountry} → {countryLabel(insight.crossCountry)}
+        </div>
+      </div>
+    </a>
   )
 }
 
