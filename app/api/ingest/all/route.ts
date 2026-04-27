@@ -5,10 +5,21 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 function isAuthorized(req: NextRequest) {
-  const cronSecret = process.env.CRON_SECRET
   if (process.env.NODE_ENV !== 'production') return true
+
+  const cronSecret = process.env.CRON_SECRET
+  const authHeader = req.headers.get('authorization')
+  const userAgent = req.headers.get('user-agent') || ''
+
+  // Vercel Cron ne pošilja našega Authorization headerja,
+  // zato mu dovolimo dostop po uradnem user-agentu.
+  if (userAgent.toLowerCase().includes('vercel-cron')) {
+    return true
+  }
+
   if (!cronSecret) return false
-  return req.headers.get('authorization') === `Bearer ${cronSecret}`
+
+  return authHeader === `Bearer ${cronSecret}`
 }
 
 async function callIngest(origin: string, path: string) {
