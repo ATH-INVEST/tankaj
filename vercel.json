@@ -2,11 +2,15 @@
   "crons": [
     {
       "path": "/api/ingest/slovenia",
-      "schedule": "0 3 * * *"
+      "schedule": "*/30 * * * *"
     },
     {
       "path": "/api/ingest/croatia",
-      "schedule": "10 3 * * *"
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/ingest/italy",
+      "schedule": "0 * * * *"
     }
   ]
 }
