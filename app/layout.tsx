@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 import InstallAppPrompt from "@/components/InstallAppPrompt";
+import MobileAppBar from "@/components/MobileAppBar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -107,6 +108,8 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-[#06140f] text-white">
         {children}
         <InstallAppPrompt />
+        <MobileAppBar />
+        
 
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-29HNWBQDL1"
