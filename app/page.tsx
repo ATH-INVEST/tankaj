@@ -142,6 +142,63 @@ function stationBrandMatches(item: Result, selectedBrand: string) {
   return Boolean(name && name.includes(selected))
 }
 
+function inferBrandKey(item: Pick<Result, 'brand' | 'name'>) {
+  const brand = normalizeFilterValue(item.brand)
+  const name = normalizeFilterValue(item.name)
+  const source = `${brand} ${name}`
+
+  const known = [
+    'PETROL',
+    'MOL',
+    'SHELL',
+    'OMV',
+    'TURMÖL',
+    'TURMOEL',
+    'JET',
+    'AVIA',
+    'MAXEN',
+    'INA',
+    'TIFON',
+    'CRODUX',
+  ]
+
+  const match = known.find((value) => source.includes(value))
+  if (!match) return brand || ''
+  if (match === 'TURMOEL') return 'TURMÖL'
+  return match
+}
+
+function brandLabel(value: string) {
+  const key = normalizeFilterValue(value)
+  const labels: Record<string, string> = {
+    PETROL: 'Petrol',
+    MOL: 'MOL',
+    SHELL: 'Shell',
+    OMV: 'OMV',
+    TURMÖL: 'Turmöl',
+    TURMOEL: 'Turmöl',
+    JET: 'JET',
+    AVIA: 'Avia',
+    MAXEN: 'Maxen',
+    INA: 'INA',
+    TIFON: 'Tifon',
+    CRODUX: 'Crodux',
+  }
+
+  return labels[key] || value
+}
+
+function countryName(value: string) {
+  const key = normalizeFilterValue(value)
+  const labels: Record<string, string> = {
+    SI: 'Slovenija',
+    HR: 'Hrvaška',
+    AT: 'Avstrija',
+  }
+
+  return labels[key] || value
+}
+
 function scoreItem(
   item: Result,
   includeFuel: boolean,
@@ -256,6 +313,58 @@ export default function Home() {
   const [loadingMore, setLoadingMore] = useState(false)
 
   const loading = status === 'location' || status === 'routing'
+
+  const countryOptions = useMemo(() => {
+    if (!results.length) return COUNTRIES
+
+    const available = new Set(
+      results
+        .map((item) => normalizeFilterValue(item.country_code))
+        .filter(Boolean)
+    )
+
+    return [
+      ['ALL', 'Vse države'],
+      ...COUNTRIES
+        .filter(([value]) => value !== 'ALL' && available.has(value))
+        .map(([value]) => [value, countryName(value)]),
+    ]
+  }, [results])
+
+  const brandSourceResults = useMemo(() => {
+    return country === 'ALL'
+      ? results
+      : results.filter((item) => countryMatches(item.country_code, country))
+  }, [results, country])
+
+  const brandOptions = useMemo(() => {
+    if (!brandSourceResults.length) return [['ALL', 'Vse znamke']]
+
+    const available = new Map<string, string>()
+
+    for (const item of brandSourceResults) {
+      const key = inferBrandKey(item)
+      if (!key) continue
+      available.set(key, brandLabel(key))
+    }
+
+    return [
+      ['ALL', 'Vse znamke'],
+      ...Array.from(available.entries()).sort((a, b) => a[1].localeCompare(b[1])),
+    ]
+  }, [brandSourceResults])
+
+  useEffect(() => {
+    if (country === 'ALL') return
+    if (countryOptions.some(([value]) => value === country)) return
+    setCountry('ALL')
+  }, [country, countryOptions])
+
+  useEffect(() => {
+    if (brand === 'ALL') return
+    if (brandOptions.some(([value]) => value === brand)) return
+    setBrand('ALL')
+  }, [brand, brandOptions])
 
   const filteredResults = useMemo(() => {
     return results.filter(
@@ -556,6 +665,8 @@ async function loadMoreResults() {
             setBrand={setBrand}
             country={country}
             setCountry={setCountry}
+            brandOptions={brandOptions}
+            countryOptions={countryOptions}
           />
 
           <ResultPanel
@@ -600,6 +711,8 @@ function HeroSearch({
   setBrand,
   country,
   setCountry,
+  brandOptions,
+  countryOptions,
   appMode,
   setAppMode,
   showAdvanced,
@@ -664,8 +777,8 @@ function HeroSearch({
 
           {showAdvanced && (
   <>
-    <SelectDark label="Znamke" value={brand} onChange={setBrand} options={BRANDS} />
-    <SelectDark label="Država" value={country} onChange={setCountry} options={COUNTRIES} />
+    <SelectDark label="Znamke" value={brand} onChange={setBrand} options={brandOptions} />
+    <SelectDark label="Država" value={country} onChange={setCountry} options={countryOptions} />
   </>
 )}
 
@@ -723,7 +836,7 @@ function ResultPanel({
       {loading && <LoadingState status={status} />}
 
       {searched && !loading && status === 'done' && !best && (
-        <EmptyState text="Za izbrane filtre trenutno ni izračunanih možnosti. Prikaži vse države/znamke ali naloži dodatne možnosti." />
+        <EmptyState text="Za ta filter trenutno ni izračunane možnosti. Prikaži vse znamke/države ali osveži iskanje z večjim radijem." />
       )}
 
       {searched && !loading && status === 'error' && (
