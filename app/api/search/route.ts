@@ -61,7 +61,7 @@ type AnyResult = RoutedResult & {
   recommendation_reason: string | null
 }
 
-const INITIAL_PER_BUCKET = 12
+const INITIAL_PER_BUCKET = 20
 const MORE_LIMIT = 5
 const ROUTING_CONCURRENCY = 6
 const CONSUMPTION_DEFAULT = 7
@@ -96,45 +96,29 @@ function brandMatches(rowBrand: string | null | undefined, selectedBrand: string
   return row.includes(selected) || selected.includes(row)
 }
 
-function countryMatches(row: Result, selectedCountry: string) {
+function countryMatches(rowCountry: string | null | undefined, selectedCountry: string) {
   if (!selectedCountry || selectedCountry === 'ALL') return true
 
+  const row = String(rowCountry || '').toUpperCase()
   const selected = selectedCountry.toUpperCase()
-  const raw = String(row.country_code || '').trim().toUpperCase()
 
-  if (raw) {
-    if (raw === selected) return true
-    if (selected === 'SI') return ['SI', 'SLO', 'SVN', 'SLOVENIA', 'SLOVENIJA'].includes(raw)
-    if (selected === 'HR') return ['HR', 'HRV', 'CRO', 'CROATIA', 'HRVATSKA'].includes(raw)
-    if (selected === 'AT') return ['AT', 'AUT', 'AUSTRIA', 'AVSTRIJA'].includes(raw)
-    if (selected === 'IT') return ['IT', 'ITA', 'ITALY', 'ITALIA', 'ITALIJA'].includes(raw)
-    if (selected === 'HU') return ['HU', 'HUN', 'HUNGARY', 'MADŽARSKA', 'MADZARSKA'].includes(raw)
-    return false
-  }
+  if (row === selected) return true
 
-  const inferred = inferLocationCountry(Number(row.lat), Number(row.lng))
-  return inferred === selected
-}
+  if (selected === 'SI') return ['SI', 'SLO', 'SVN'].includes(row)
+  if (selected === 'HR') return ['HR', 'HRV'].includes(row)
+  if (selected === 'AT') return ['AT', 'AUT'].includes(row)
+  if (selected === 'IT') return ['IT', 'ITA'].includes(row)
+  if (selected === 'HU') return ['HU', 'HUN'].includes(row)
 
-function inferLocationCountry(lat: number, lng: number) {
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
-
-  // Rough fallback only for rows without country_code. Real source country_code wins.
-  if (lat >= 42 && lat <= 46.7 && lng >= 13 && lng <= 19.8) {
-    if (lat < 45.75 && lng < 14.35) return 'HR'
-    if (lat < 45.35) return 'HR'
-  }
-
-  if (lat >= 45.35 && lat <= 46.9 && lng >= 13.35 && lng <= 16.7) return 'SI'
-  if (lat >= 42 && lat <= 46.7 && lng >= 13 && lng <= 19.8) return 'HR'
-  if (lat >= 46.3 && lat <= 49.2 && lng >= 9.4 && lng <= 17.3) return 'AT'
-
-  return null
+  return false
 }
 
 
 function inferUserCountry(lat: number, lng: number) {
-  return inferLocationCountry(lat, lng)
+  if (lat >= 46.3 && lat <= 49.2 && lng >= 9.4 && lng <= 17.3) return 'AT'
+  if (lat >= 45 && lat <= 47 && lng >= 13 && lng <= 17) return 'SI'
+  if (lat >= 42 && lat <= 47 && lng >= 13 && lng <= 20) return 'HR'
+  return null
 }
 
 function hasCoords(r: Result): r is Result & { lat: number; lng: number } {
@@ -169,7 +153,35 @@ function buildInitialCandidatePool(rows: Result[], amount: number) {
     .sort((a, b) => n(a.distance_km, 999) - n(b.distance_km, 999))
     .slice(0, INITIAL_PER_BUCKET)
 
-  return uniqueByLocation([...smart, ...cheapest, ...nearest])
+  const byCountry = new Map<string, Result[]>()
+
+  for (const row of rows) {
+    const country = String(row.country_code || 'UNKNOWN').toUpperCase()
+    const existing = byCountry.get(country) || []
+    existing.push(row)
+    byCountry.set(country, existing)
+  }
+
+  const countryCoverage: Result[] = []
+
+  for (const group of byCountry.values()) {
+    countryCoverage.push(
+      ...[...group]
+        .sort((a, b) => n(a.distance_km, 999) - n(b.distance_km, 999))
+        .slice(0, 8)
+    )
+
+    countryCoverage.push(
+      ...[...group]
+        .sort((a, b) => {
+          if (a.price !== b.price) return a.price - b.price
+          return n(a.distance_km, 999) - n(b.distance_km, 999)
+        })
+        .slice(0, 8)
+    )
+  }
+
+  return uniqueByLocation([...nearest, ...cheapest, ...smart, ...countryCoverage])
 }
 
 function buildMoreCandidatePool(rows: Result[], amount: number, sortBy: SortBy, offset: number) {
@@ -559,9 +571,9 @@ function pickWinner(rows: AnyResult[], sortBy: SortBy, radius: number) {
   }
 }
 
-function countByCountry(rows: Result[]) {
+function countByCountry(rows: { country_code?: string | null }[]) {
   return rows.reduce<Record<string, number>>((acc, row) => {
-    const key = String(row.country_code || inferLocationCountry(Number(row.lat), Number(row.lng)) || 'UNKNOWN').toUpperCase()
+    const key = String(row.country_code || 'UNKNOWN').toUpperCase()
     acc[key] = (acc[key] || 0) + 1
     return acc
   }, {})
@@ -639,7 +651,7 @@ export async function GET(req: Request) {
 }
 
 if (countryFilter && countryFilter !== 'ALL') {
-  rows = rows.filter((r) => countryMatches(r, countryFilter))
+  rows = rows.filter((r) => countryMatches(r.country_code, countryFilter))
 }
 
   const candidatePool =
@@ -665,7 +677,7 @@ if (countryFilter && countryFilter !== 'ALL') {
     sortBy
   )
 
-  const nextOffset = batch === 'more' ? offset + MORE_LIMIT : INITIAL_PER_BUCKET
+  const nextOffset = batch === 'more' ? offset + MORE_LIMIT : candidatePool.length
   const hasMore = rows.length > nextOffset
 
   return NextResponse.json({
@@ -684,8 +696,9 @@ if (countryFilter && countryFilter !== 'ALL') {
       routed_count: routed.length,
       valid_count: valid.length,
       results_count: results.length,
-      country_filter: countryFilter,
       rows_by_country: countByCountry(rows),
+      valid_by_country: countByCountry(valid),
+      country_filter: countryFilter,
     },
   })
 }

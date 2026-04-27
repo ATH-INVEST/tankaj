@@ -94,6 +94,40 @@ function countryLabel(code?: string | null) {
   return code.toUpperCase()
 }
 
+function normalizeFilterValue(value?: string | null) {
+  return String(value || '').trim().toUpperCase()
+}
+
+function brandMatches(rowBrand: string | null | undefined, selectedBrand: string) {
+  const selected = normalizeFilterValue(selectedBrand)
+  if (!selected || selected === 'ALL') return true
+
+  const row = normalizeFilterValue(rowBrand)
+  if (!row) return false
+  if (row === selected) return true
+
+  return row.includes(selected) || selected.includes(row)
+}
+
+function countryMatches(rowCountry: string | null | undefined, selectedCountry: string) {
+  const selected = normalizeFilterValue(selectedCountry)
+  if (!selected || selected === 'ALL') return true
+
+  const row = normalizeFilterValue(rowCountry)
+  if (!row) return false
+  if (row === selected) return true
+
+  const aliases: Record<string, string[]> = {
+    SI: ['SI', 'SLO', 'SVN'],
+    HR: ['HR', 'HRV', 'CRO'],
+    AT: ['AT', 'AUT'],
+    IT: ['IT', 'ITA'],
+    HU: ['HU', 'HUN'],
+  }
+
+  return aliases[selected]?.includes(row) ?? false
+}
+
 function scoreItem(
   item: Result,
   includeFuel: boolean,
@@ -209,9 +243,15 @@ export default function Home() {
 
   const loading = status === 'location' || status === 'routing'
 
+  const filteredResults = useMemo(() => {
+    return results.filter(
+      (item) => brandMatches(item.brand, brand) && countryMatches(item.country_code, country)
+    )
+  }, [results, brand, country])
+
   const sortedResults = useMemo(() => {
-    return sortClientResults(results, sortBy, includeFuel, includePath, includeTime)
-  }, [results, sortBy, includeFuel, includePath, includeTime])
+    return sortClientResults(filteredResults, sortBy, includeFuel, includePath, includeTime)
+  }, [filteredResults, sortBy, includeFuel, includePath, includeTime])
 
   const best = sortedResults[0] || null
 
@@ -225,9 +265,9 @@ export default function Home() {
   }, [sortedResults, best])
 
   const nearest = useMemo(() => {
-    if (!results.length) return null
-    return [...results].sort((a, b) => a.distance_km - b.distance_km)[0] || null
-  }, [results])
+    if (!filteredResults.length) return null
+    return [...filteredResults].sort((a, b) => a.distance_km - b.distance_km)[0] || null
+  }, [filteredResults])
 
   const savingVsNearest = useMemo(() => {
     if (!best || !nearest || best.location_id === nearest.location_id) return 0
@@ -237,8 +277,8 @@ export default function Home() {
   }, [best, nearest, includeFuel, includePath, includeTime])
 
   const crossBorderInsight = useMemo(() => {
-    return buildCrossBorderInsight(results, best, includeFuel, includePath, includeTime)
-  }, [results, best, includeFuel, includePath, includeTime])
+    return buildCrossBorderInsight(filteredResults, best, includeFuel, includePath, includeTime)
+  }, [filteredResults, best, includeFuel, includePath, includeTime])
 
   const lastUpdated = useMemo(() => {
     if (!best?.captured_at) return null
@@ -260,8 +300,8 @@ async function loadMoreResults() {
       type: fuelType,
       radius: String(radius),
       amount: String(amount),
-      brand,
-      country,
+      brand: 'ALL',
+      country: 'ALL',
       mode: appMode,
       sortBy,
       batch: 'more',
@@ -278,20 +318,17 @@ async function loadMoreResults() {
     const receivedCount = Number(json.results?.length || 0)
     const next = Number(json.next_offset || nextOffset + 5)
 
-    if (receivedCount === 0) {
-      setHasMore(false)
-      return
-    }
-
     setResults((prev) => {
       const map = new Map<string, Result>()
       for (const item of prev) map.set(item.location_id, item)
+      const beforeSize = map.size
       for (const item of json.results || []) map.set(item.location_id, item)
+      if (map.size === beforeSize && !json.has_more) setHasMore(false)
       return Array.from(map.values())
     })
 
     setNextOffset((current) => json.next_offset || current + 5)
-    setHasMore(Boolean(json.has_more))
+    setHasMore(receivedCount > 0 && Boolean(json.has_more))
     setShowOthers(true)
 
     trackEvent('load_more_results', {
@@ -339,8 +376,8 @@ async function loadMoreResults() {
           type: fuelType,
           radius: String(radius),
           amount: String(amount),
-          brand,
-          country,
+          brand: 'ALL',
+          country: 'ALL',
           mode: appMode,
           batch: 'initial',
         })
@@ -386,7 +423,7 @@ async function loadMoreResults() {
         setStatus('error')
       }
     },
-    [fuelType, radius, amount, brand, country, appMode]
+    [fuelType, radius, amount, appMode]
   )
 
 
@@ -437,7 +474,7 @@ async function loadMoreResults() {
     }, 450)
 
     return () => clearTimeout(timeout)
-}, [coords, searched, fuelType, radius, amount, brand, country, appMode, runSearch])
+}, [coords, searched, fuelType, radius, amount, appMode, runSearch])
 
   function mapsUrl(item: Result) {
     return `https://www.google.com/maps/dir/?api=1&destination=${item.lat},${item.lng}`
@@ -584,7 +621,7 @@ function HeroSearch({
       </h1>
 
       <p className="mt-5 max-w-lg text-base leading-relaxed text-white/60 sm:text-lg">
-        Odpri app, dovoli lokacijo in Tankaj.si sam izračuna najboljšo izbiro. Ko spremeniš radij, gorivo ali filtre, rezultat samodejno osvežimo.
+        Odpri app, dovoli lokacijo in Tankaj.si sam izračuna najboljšo izbiro. Gorivo in radij preračunamo, filtre pa nato uporabiš takoj brez ponovnega čakanja.
       </p>
 
       <ModeSwitch appMode={appMode} setAppMode={setAppMode} />
@@ -672,7 +709,7 @@ function ResultPanel({
       {loading && <LoadingState status={status} />}
 
       {searched && !loading && status === 'done' && !best && (
-        <EmptyState text="V izbranem radiusu trenutno ni realno izračunanih možnosti. Poskusi povečati radius ali prikazati vse znamke." />
+        <EmptyState text="Za izbrane filtre trenutno ni izračunanih možnosti. Poskusi prikazati vse države/znamke ali povečati radius." />
       )}
 
       {searched && !loading && status === 'error' && (
