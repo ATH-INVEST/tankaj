@@ -43,6 +43,12 @@ const BRANDS = [
   ['INA', 'INA'],
   ['TIFON', 'Tifon'],
   ['CRODUX', 'Crodux'],
+  ['ENI', 'Eni'],
+  ['Q8', 'Q8'],
+  ['IP', 'IP'],
+  ['TAMOIL', 'Tamoil'],
+  ['ESSO', 'Esso'],
+  ['TOTALENERGIES', 'TotalEnergies'],
 ]
 const sortOptions: [SortBy, string][] = [
   ['smart', 'Priporočeno'],
@@ -60,7 +66,14 @@ function brandShort(brand?: string | null) {
   if (b.includes('TIFON')) return 'TF'
   if (b.includes('CRODUX')) return 'CR'
   if (b.includes('OMV')) return 'OMV'
+  if (b.includes('ENI')) return 'ENI'
+  if (b.includes('Q8')) return 'Q8'
+  if (b.includes('IP')) return 'IP'
+  if (b.includes('TAMOIL')) return 'TA'
+  if (b.includes('ESSO')) return 'ES'
+  if (b.includes('TOTAL')) return 'TE'
   return b.slice(0, 3)
+
 }
 
 function brandColor(brand?: string | null) {
@@ -71,6 +84,12 @@ function brandColor(brand?: string | null) {
   if (b.includes('OMV')) return 'bg-white text-[#007a5e]'
   if (b.includes('INA')) return 'bg-[#0067b1] text-white'
   if (b.includes('TIFON')) return 'bg-[#1f4bff] text-white'
+  if (b.includes('ENI') || b.includes('AGIP')) return 'bg-[#ffd100] text-[#111]'
+  if (b.includes('Q8')) return 'bg-[#005baa] text-white'
+  if (b.includes('IP')) return 'bg-[#1f4bff] text-white'
+  if (b.includes('TAMOIL')) return 'bg-[#0050a4] text-white'
+  if (b.includes('ESSO')) return 'bg-[#e1251b] text-white'
+  if (b.includes('TOTAL')) return 'bg-[#ed1b2f] text-white'
   return 'bg-white/90 text-[#0b1f16]'
 }
 
@@ -134,6 +153,12 @@ function inferBrandKey(item: Pick<Result, 'brand' | 'name'>) {
     'INA',
     'TIFON',
     'CRODUX',
+    'ENI',
+    'Q8',
+    'IP',
+    'TAMOIL',
+    'ESSO',
+    'TOTALENERGIES',
   ]
 
   const match = known.find((value) => source.includes(value))
@@ -157,6 +182,12 @@ function brandLabel(value: string) {
     INA: 'INA',
     TIFON: 'Tifon',
     CRODUX: 'Crodux',
+    ENI: 'Eni',
+    Q8: 'Q8',
+    IP: 'IP',
+    TAMOIL: 'Tamoil',
+    ESSO: 'Esso',
+    TOTALENERGIES: 'TotalEnergies',
   }
 
   return labels[key] || value
@@ -251,6 +282,7 @@ export default function Home() {
   const [radius, setRadius] = useState(25)
   const [amount, setAmount] = useState(50)
   const [brand, setBrand] = useState('ALL')
+  const [country, setCountry] = useState('ALL')
   const [sortBy, setSortBy] = useState<SortBy>('smart')
   const [appMode, setAppMode] = useState<'nearby' | 'route'>('nearby')
   const [showOthers, setShowOthers] = useState(false)
@@ -359,6 +391,7 @@ async function loadMoreResults() {
       sortBy,
       batch: 'more',
       offset: String(nextOffset),
+      country,
     })
 
     const res = await fetch(`/api/search?${params.toString()}`)
@@ -429,6 +462,7 @@ async function loadMoreResults() {
           amount: String(amount),
               mode: appMode,
           batch: 'initial',
+          country,
         })
 
         const res = await fetch(`/api/search?${params.toString()}`, {
@@ -470,7 +504,7 @@ async function loadMoreResults() {
         setStatus('error')
       }
     },
-    [fuelType, radius, amount, appMode]
+    [fuelType, radius, amount, appMode, country]
   )
 
 
@@ -513,15 +547,7 @@ async function loadMoreResults() {
     requestLocationAndSearch()
   }, [requestLocationAndSearch])
 
-  useEffect(() => {
-    if (!coords || !searched || appMode === 'route') return
-
-    const timeout = setTimeout(() => {
-      runSearch(coords)
-    }, 450)
-
-    return () => clearTimeout(timeout)
-}, [coords, searched, fuelType, radius, amount, appMode, runSearch])
+  
 
   function mapsUrl(item: Result) {
     return `https://www.google.com/maps/dir/?api=1&destination=${item.lat},${item.lng}`
@@ -586,6 +612,8 @@ async function loadMoreResults() {
             brand={brand}
             setBrand={setBrand}
             brandOptions={brandOptions}
+            country={country}
+            setCountry={setCountry}
           />
 
           <ResultPanel
@@ -641,6 +669,8 @@ function HeroSearch({
   setIncludePath,
   includeTime,
   setIncludeTime,
+  country,
+  setCountry,
 }: any) {
   return (
     <div className="rounded-[30px] border border-white/10 bg-white/[0.055] p-4 shadow-[0_25px_80px_rgba(0,0,0,.25)] backdrop-blur-2xl sm:p-6 lg:min-h-[720px] lg:p-8">
@@ -655,7 +685,7 @@ function HeroSearch({
 
       <div className="mt-5 flex items-center gap-2 text-sm text-white/58">
         <span className="text-[#b9fb6a]">⌖</span>
-        <span>Slovenija, Hrvaška, Avstrija</span>
+        <span>Slovenija, Hrvaška, Avstrija, Italija</span>
       </div>
 
       <h1 className="mt-6 max-w-xl text-[48px] font-black leading-[.93] tracking-[-.055em] sm:text-[64px] lg:text-[72px] xl:text-[78px]">
@@ -691,6 +721,18 @@ function HeroSearch({
           </label>
 
           <SelectDark label="Znamka" value={brand} onChange={setBrand} options={brandOptions} />
+          <SelectDark
+  label="Država"
+  value={country}
+  onChange={setCountry}
+  options={[
+    ['ALL', 'Vse države'],
+    ['SI', 'Slovenija'],
+    ['HR', 'Hrvaška'],
+    ['AT', 'Avstrija'],
+    ['IT', 'Italija'],
+  ]}
+/>
 
           <button
             onClick={search}
