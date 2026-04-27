@@ -1,7 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
+import InstallAppPrompt from "@/components/InstallAppPrompt";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -16,7 +17,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL("https://tankaj.si"),
   title: {
-    default: "Ne tankaj na pamet • Tankaj.si",
+    default: "Ne tankaj več na pamet • Tankaj.si",
     template: "%s | Tankaj.si",
   },
   description:
@@ -28,11 +29,19 @@ export const metadata: Metadata = {
     "najcenejša črpalka",
     "gorivo Slovenija",
     "gorivo Hrvaška",
+    "gorivo Avstrija",
+    "gorivo Italija",
+    "gorivo Madžarska",
     "tankaj pametno",
   ],
   authors: [{ name: "Tankaj.si" }],
   creator: "Tankaj.si",
-
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    title: "Tankaj",
+    statusBarStyle: "black-translucent",
+  },
   openGraph: {
     title: "Ne tankaj na pamet • Tankaj.si",
     description:
@@ -50,23 +59,39 @@ export const metadata: Metadata = {
       },
     ],
   },
-
   twitter: {
     card: "summary_large_image",
     title: "Ne tankaj na pamet • Tankaj.si",
-    description:
-      "Izračunaj, katera črpalka se ti dejansko splača.",
+    description: "Izračunaj, katera črpalka se ti dejansko splača.",
     images: ["/og-image.png"],
   },
-
   robots: {
     index: true,
     follow: true,
   },
-
   icons: {
-    icon: "/favicon.ico",
+    icon: [
+      { url: "/favicon.ico" },
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [
+      {
+        url: "/icons/apple-touch-icon.png",
+        sizes: "180x180",
+        type: "image/png",
+      },
+    ],
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#06140f",
+  colorScheme: "dark",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -79,10 +104,10 @@ export default function RootLayout({
       lang="sl"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-white text-gray-900">
+      <body className="min-h-full flex flex-col bg-[#06140f] text-white">
         {children}
+        <InstallAppPrompt />
 
-        {/* Google Analytics */}
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-29HNWBQDL1"
           strategy="afterInteractive"
