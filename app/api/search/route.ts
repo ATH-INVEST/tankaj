@@ -106,10 +106,17 @@ function inferBrandKey(row: Pick<Result, 'brand' | 'name'>) {
     'INA',
     'TIFON',
     'CRODUX',
+    'ENI',
+    'Q8',
+    'IP',
+    'TAMOIL',
+    'ESSO',
+    'TOTALENERGIES',
   ]
 
   return known.find((brand) => name.includes(brand)) || ''
 }
+
 function brandMatches(row: Pick<Result, 'brand' | 'name'>, selectedBrand: string) {
   if (!selectedBrand || selectedBrand === 'ALL') return true
 
@@ -130,7 +137,6 @@ function countryMatches(rowCountry: string | null | undefined, selectedCountry: 
   const selected = selectedCountry.toUpperCase()
 
   if (row === selected) return true
-
   if (selected === 'SI') return ['SI', 'SLO', 'SVN'].includes(row)
   if (selected === 'HR') return ['HR', 'HRV'].includes(row)
   if (selected === 'AT') return ['AT', 'AUT'].includes(row)
@@ -140,11 +146,11 @@ function countryMatches(rowCountry: string | null | undefined, selectedCountry: 
   return false
 }
 
-
 function inferUserCountry(lat: number, lng: number) {
   if (lat >= 46.3 && lat <= 49.2 && lng >= 9.4 && lng <= 17.3) return 'AT'
   if (lat >= 45 && lat <= 47 && lng >= 13 && lng <= 17) return 'SI'
   if (lat >= 42 && lat <= 47 && lng >= 13 && lng <= 20) return 'HR'
+  if (lat >= 35 && lat <= 48 && lng >= 6 && lng <= 19) return 'IT'
   return null
 }
 
@@ -158,9 +164,11 @@ function candidateScore(row: Result, amount: number) {
 
 function uniqueByLocation(rows: Result[]) {
   const map = new Map<string, Result>()
+
   for (const row of rows) {
     if (!map.has(row.location_id)) map.set(row.location_id, row)
   }
+
   return Array.from(map.values())
 }
 
@@ -212,8 +220,7 @@ function buildInitialCandidatePool(rows: Result[], amount: number) {
   const mandatory = uniqueByLocation([...nearest, ...cheapest, ...coverage])
   const optional = uniqueByLocation([...smart])
 
-  return uniqueByLocation([...mandatory, ...optional])
-    .slice(0, INITIAL_CANDIDATE_LIMIT)
+  return uniqueByLocation([...mandatory, ...optional]).slice(0, INITIAL_CANDIDATE_LIMIT)
 }
 
 function buildMoreCandidatePool(rows: Result[], amount: number, sortBy: SortBy, offset: number) {
@@ -227,6 +234,7 @@ function buildMoreCandidatePool(rows: Result[], amount: number, sortBy: SortBy, 
       if (n(a.distance_km, 999) !== n(b.distance_km, 999)) {
         return n(a.distance_km, 999) - n(b.distance_km, 999)
       }
+
       return a.price - b.price
     }
 
@@ -239,18 +247,11 @@ function buildMoreCandidatePool(rows: Result[], amount: number, sortBy: SortBy, 
 function mapAustriaFuelType(type: string): AustriaFuelType {
   const value = type.toUpperCase()
 
-  if (
-    value.includes('DIESEL') ||
-    value.includes('DIE') ||
-    value.includes('DIZEL')
-  ) {
+  if (value.includes('DIESEL') || value.includes('DIE') || value.includes('DIZEL')) {
     return 'DIE'
   }
 
-  if (
-    value.includes('CNG') ||
-    value.includes('GAS')
-  ) {
+  if (value.includes('CNG') || value.includes('GAS')) {
     return 'GAS'
   }
 
@@ -258,9 +259,9 @@ function mapAustriaFuelType(type: string): AustriaFuelType {
 }
 
 function normalizeAustriaFuelType(fuel: AustriaFuelType) {
-  if (fuel === 'DIE') return 'diesel'
-  if (fuel === 'SUP') return 'bencin95'
-  return 'cng'
+  if (fuel === 'DIE') return 'DIESEL'
+  if (fuel === 'SUP') return 'PETROL_95'
+  return 'CNG'
 }
 
 function normalizeAustriaBrand(name: string): string | null {
@@ -286,12 +287,7 @@ function getAustriaPrice(station: AustriaStation, fuel: AustriaFuelType): number
   return null
 }
 
-function haversineKm(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number
-) {
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371
   const dLat = (lat2 - lat1) * (Math.PI / 180)
   const dLon = (lon2 - lon1) * (Math.PI / 180)
@@ -305,17 +301,10 @@ function haversineKm(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
-async function fetchAustriaRows(
-  lat: number,
-  lng: number,
-  type: string
-): Promise<Result[]> {
+async function fetchAustriaRows(lat: number, lng: number, type: string): Promise<Result[]> {
   const fuel = mapAustriaFuelType(type)
 
-  const url = new URL(
-    'https://api.e-control.at/sprit/1.0/search/gas-stations/by-address'
-  )
-
+  const url = new URL('https://api.e-control.at/sprit/1.0/search/gas-stations/by-address')
   url.searchParams.set('latitude', String(lat))
   url.searchParams.set('longitude', String(lng))
   url.searchParams.set('fuelType', fuel)
@@ -323,9 +312,7 @@ async function fetchAustriaRows(
 
   try {
     const res = await fetch(url.toString(), {
-      headers: {
-        accept: 'application/json',
-      },
+      headers: { accept: 'application/json' },
       cache: 'no-store',
     })
 
@@ -411,7 +398,7 @@ async function getCachedRoute(
   return {
     distance_km: Number(data.distance_km),
     duration_min: Number(data.duration_min),
-    route_source: data.route_source === 'osrm' ? 'osrm' as const : 'openrouteservice' as const,
+    route_source: data.route_source === 'osrm' ? ('osrm' as const) : ('openrouteservice' as const),
   }
 }
 
@@ -436,8 +423,7 @@ async function saveCachedRoute(
       expires_at: new Date(Date.now() + ROUTE_CACHE_DAYS * 24 * 60 * 60 * 1000).toISOString(),
     },
     {
-      onConflict:
-        'from_lat_rounded,from_lng_rounded,to_lat_rounded,to_lng_rounded',
+      onConflict: 'from_lat_rounded,from_lng_rounded,to_lat_rounded,to_lng_rounded',
     }
   )
 }
@@ -618,7 +604,13 @@ export async function GET(req: Request) {
   const lng = Number(searchParams.get('lng'))
   const radius = Number(searchParams.get('radius') || 25)
   const amount = Number(searchParams.get('amount') || 50)
-  const type = searchParams.get('type') || 'PETROL_95'
+  const type =
+    searchParams.get('type') ||
+    searchParams.get('fuel_type') ||
+    searchParams.get('fuelType') ||
+    searchParams.get('fuel') ||
+    'PETROL_95'
+
   const consumption = Number(searchParams.get('consumption') || CONSUMPTION_DEFAULT)
   const timeValue = Number(searchParams.get('timeValue') || TIME_VALUE_DEFAULT)
 
@@ -679,12 +671,12 @@ export async function GET(req: Request) {
   let rows = uniqueByLocation([...dbRows, ...austriaRows])
 
   if (brandFilter && brandFilter !== 'ALL') {
-  rows = rows.filter((r) => brandMatches(r, brandFilter))
-}
+    rows = rows.filter((r) => brandMatches(r, brandFilter))
+  }
 
-if (countryFilter && countryFilter !== 'ALL') {
-  rows = rows.filter((r) => countryMatches(r.country_code, countryFilter))
-}
+  if (countryFilter && countryFilter !== 'ALL') {
+    rows = rows.filter((r) => countryMatches(r.country_code, countryFilter))
+  }
 
   const candidatePool =
     batch === 'more'
