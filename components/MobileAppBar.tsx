@@ -12,7 +12,7 @@ export default function MobileAppBar() {
         </a>
 
         <a
-          href="#how-it-works"
+          href="#result"
           className="rounded-[18px] px-3 py-2.5 text-center text-xs font-black text-white/65"
         >
           Kako

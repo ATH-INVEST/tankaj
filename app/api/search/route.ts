@@ -84,6 +84,35 @@ function routeKeyCoord(value: number) {
 function normalizeBrand(value?: string | null) {
   return value ? value.trim().toUpperCase() : ''
 }
+function brandMatches(rowBrand: string | null | undefined, selectedBrand: string) {
+  if (!selectedBrand || selectedBrand === 'ALL') return true
+
+  const row = normalizeBrand(rowBrand)
+  const selected = normalizeBrand(selectedBrand)
+
+  if (!row) return false
+  if (row === selected) return true
+
+  return row.includes(selected) || selected.includes(row)
+}
+
+function countryMatches(rowCountry: string | null | undefined, selectedCountry: string) {
+  if (!selectedCountry || selectedCountry === 'ALL') return true
+
+  const row = String(rowCountry || '').toUpperCase()
+  const selected = selectedCountry.toUpperCase()
+
+  if (row === selected) return true
+
+  if (selected === 'SI') return ['SI', 'SLO', 'SVN'].includes(row)
+  if (selected === 'HR') return ['HR', 'HRV'].includes(row)
+  if (selected === 'AT') return ['AT', 'AUT'].includes(row)
+  if (selected === 'IT') return ['IT', 'ITA'].includes(row)
+  if (selected === 'HU') return ['HU', 'HUN'].includes(row)
+
+  return false
+}
+
 
 function inferUserCountry(lat: number, lng: number) {
   if (lat >= 46.3 && lat <= 49.2 && lng >= 9.4 && lng <= 17.3) return 'AT'
@@ -582,12 +611,12 @@ export async function GET(req: Request) {
   let rows = uniqueByLocation([...dbRows, ...austriaRows])
 
   if (brandFilter && brandFilter !== 'ALL') {
-    rows = rows.filter((r) => normalizeBrand(r.brand) === brandFilter)
-  }
+  rows = rows.filter((r) => brandMatches(r.brand, brandFilter))
+}
 
-  if (countryFilter && countryFilter !== 'ALL') {
-    rows = rows.filter((r) => r.country_code === countryFilter)
-  }
+if (countryFilter && countryFilter !== 'ALL') {
+  rows = rows.filter((r) => countryMatches(r.country_code, countryFilter))
+}
 
   const candidatePool =
     batch === 'more'

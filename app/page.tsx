@@ -337,7 +337,6 @@ async function loadMoreResults() {
           brand,
           country,
           mode: appMode,
-          sortBy,
           batch: 'initial',
         })
 
@@ -382,7 +381,7 @@ async function loadMoreResults() {
         setStatus('error')
       }
     },
-    [fuelType, radius, amount, brand, country, appMode, sortBy]
+    [fuelType, radius, amount, brand, country, appMode]
   )
 
 
@@ -664,7 +663,7 @@ function ResultPanel({
   crossBorderInsight,
 }: any) {
   return (
-    <div className="rounded-[30px] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(185,251,106,.18),transparent_32%),linear-gradient(180deg,rgba(15,48,34,.86),rgba(5,20,14,.88))] p-4 shadow-[0_25px_80px_rgba(0,0,0,.25)] backdrop-blur-2xl sm:p-6 lg:min-h-[720px] lg:p-8">
+    <div id="result" className="rounded-[30px] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(185,251,106,.18),transparent_32%),linear-gradient(180deg,rgba(15,48,34,.86),rgba(5,20,14,.88))] p-4 shadow-[0_25px_80px_rgba(0,0,0,.25)] backdrop-blur-2xl sm:p-6 lg:min-h-[720px] lg:p-8">
       {loading && <LoadingState status={status} />}
 
       {searched && !loading && status === 'done' && !best && (
