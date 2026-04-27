@@ -64,7 +64,7 @@ type AnyResult = RoutedResult & {
 const INITIAL_PER_BUCKET = 5
 const COUNTRY_COVERAGE_LIMIT = 1
 const BRAND_COVERAGE_LIMIT = 1
-const INITIAL_CANDIDATE_LIMIT = 14
+const INITIAL_CANDIDATE_LIMIT = 16
 const MORE_LIMIT = 5
 const ROUTING_CONCURRENCY = 8
 const CONSUMPTION_DEFAULT = 7
@@ -209,8 +209,10 @@ function buildInitialCandidatePool(rows: Result[], amount: number) {
     )
   }
 
-  return uniqueByLocation([...nearest, ...cheapest, ...smart, ...coverage])
-    .sort((a, b) => candidateScore(a, amount) - candidateScore(b, amount))
+  const mandatory = uniqueByLocation([...nearest, ...cheapest, ...coverage])
+  const optional = uniqueByLocation([...smart])
+
+  return uniqueByLocation([...mandatory, ...optional])
     .slice(0, INITIAL_CANDIDATE_LIMIT)
 }
 

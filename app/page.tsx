@@ -598,6 +598,7 @@ async function loadMoreResults() {
             loading={loading}
             searched={searched}
             status={status}
+            hasAnyResults={results.length > 0}
             lastUpdated={lastUpdated}
             savingVsNearest={savingVsNearest}
             mapsUrl={mapsUrl}
@@ -719,6 +720,7 @@ function ResultPanel({
   loading,
   searched,
   status,
+  hasAnyResults,
   lastUpdated,
   savingVsNearest,
   mapsUrl,
@@ -737,7 +739,13 @@ function ResultPanel({
       {loading && <LoadingState status={status} />}
 
       {searched && !loading && status === 'done' && !best && (
-        <EmptyState text="Za izbrano znamko trenutno ni izračunane možnosti v izračunanem izboru. Prikaži vse znamke ali naloži dodatne možnosti." />
+        <EmptyState
+          text={
+            hasAnyResults
+              ? 'Za izbrano znamko trenutno ni izračunane možnosti v izračunanem izboru. Prikaži vse znamke ali naloži dodatne možnosti.'
+              : 'V izbranem radiju trenutno ni izračunanih možnosti. Povečaj radij ali poskusi znova.'
+          }
+        />
       )}
 
       {searched && !loading && status === 'error' && (
