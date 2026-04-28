@@ -17,16 +17,23 @@ function isAuthorized(req: NextRequest) {
   return authHeader === `Bearer ${cronSecret}`;
 }
 
+function getInternalAuthHeader(req: NextRequest) {
+  const authHeader = req.headers.get("authorization");
+
+  if (authHeader) return authHeader;
+
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret) return `Bearer ${cronSecret}`;
+
+  return undefined;
+}
+
 async function callIngest(origin: string, path: string, req: NextRequest) {
-  const authHeader = req.headers.get("authorization") || undefined;
+  const authorization = getInternalAuthHeader(req);
 
   try {
     const res = await fetch(`${origin}${path}`, {
-      headers: authHeader
-        ? {
-            authorization: authHeader,
-          }
-        : undefined,
+      headers: authorization ? { authorization } : undefined,
       cache: "no-store",
     });
 
