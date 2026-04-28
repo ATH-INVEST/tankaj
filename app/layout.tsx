@@ -19,25 +19,31 @@ const siteUrl = "https://tankaj.si";
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "Cena goriva Slovenija in Hrvaška • Tankaj.si",
+    default: "Tankaj.si • Cene goriva in EV polnilnice",
     template: "%s | Tankaj.si",
   },
   description:
-    "Primerjaj cene goriva in izračunaj dejanski strošek poti. Najdi najcenejšo črpalko v Sloveniji, na Hrvaškem in v sosednjih državah.",
+    "Primerjaj cene goriva in EV polnilnic v Sloveniji, na Hrvaškem, v Avstriji in Italiji. Tankaj.si izračuna realni strošek poti, čas in najboljšo izbiro v tvoji bližini.",
   keywords: [
     "cena goriva",
-    "cena goriva danes",
+    "cene goriv danes",
     "bencin cena",
     "dizel cena",
     "najcenejša črpalka",
     "cene goriv Slovenija",
-    "gorivo Slovenija",
-    "gorivo Hrvaška",
-    "gorivo Avstrija",
-    "gorivo Italija",
-    "gorivo Madžarska",
-    "tankaj pametno",
+    "cene goriv Hrvaška",
+    "cene goriv Avstrija",
+    "cene goriv Italija",
+    "EV polnilnice",
+    "električne polnilnice",
+    "cena polnjenja EV",
+    "cena elektrike za avto",
+    "polnjenje električnega avta",
+    "DC polnilnice",
+    "AC polnilnice",
     "kje se splača tankati",
+    "kje se splača polniti",
+    "Tankaj.si",
   ],
   authors: [{ name: "Tankaj.si" }],
   creator: "Tankaj.si",
@@ -54,9 +60,9 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
   },
   openGraph: {
-    title: "Cena goriva Slovenija in Hrvaška • Tankaj.si",
+    title: "Tankaj.si • Cene goriva in EV polnilnice",
     description:
-      "Najnižja cena na liter ni vedno najboljša izbira. Izračunaj realni strošek poti in preveri, kje se ti dejansko splača tankati.",
+      "Najnižja cena ni vedno najboljša izbira. Primerjaj gorivo in EV polnilnice glede na ceno, razdaljo, čas in realni strošek poti.",
     url: siteUrl,
     siteName: "Tankaj.si",
     locale: "sl_SI",
@@ -66,15 +72,15 @@ export const metadata: Metadata = {
         url: "/og-image.png",
         width: 1200,
         height: 630,
-        alt: "Tankaj.si – primerjava cen goriva in pametno tankanje",
+        alt: "Tankaj.si – primerjava cen goriva in EV polnilnic",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Cena goriva Slovenija in Hrvaška • Tankaj.si",
+    title: "Tankaj.si • Cene goriva in EV polnilnice",
     description:
-      "Izračunaj, katera črpalka se ti dejansko splača glede na ceno goriva, razdaljo in strošek poti.",
+      "Izračunaj, kje se ti dejansko splača tankati ali polniti električni avto glede na ceno, razdaljo in čas.",
     images: ["/og-image.png"],
   },
   robots: {
@@ -123,7 +129,7 @@ export default function RootLayout({
       lang="sl"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-[#06140f] text-white">
+      <body className="flex min-h-full flex-col bg-[#06140f] text-white">
         {children}
         <MobileAppBar />
 
