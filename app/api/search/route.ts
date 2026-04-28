@@ -80,6 +80,25 @@ function round(v: number, decimals = 2) {
   return Number(v.toFixed(decimals))
 }
 
+function isPlausibleFuelPrice(
+  countryCode: string | null | undefined,
+  fuelType: string,
+  price: number
+) {
+  const country = String(countryCode || '').toUpperCase()
+
+  if (country === 'SI') {
+    if (fuelType === 'PETROL_95') return price >= 1.50 && price <= 1.90
+    if (fuelType === 'DIESEL') return price >= 1.45 && price <= 2.10
+    if (fuelType === 'ELKO') return price >= 1.00 && price <= 1.60
+    if (fuelType === 'PETROL_100') return price >= 1.60 && price <= 2.30
+    if (fuelType === 'PREMIUM_DIESEL') return price >= 1.60 && price <= 2.30
+  }
+
+  // fallback EU
+  return price >= 0.8 && price <= 3.0
+}
+
 function routeKeyCoord(value: number) {
   return Number(value.toFixed(4))
 }
@@ -660,8 +679,11 @@ export async function GET(req: Request) {
   const userCountry = inferUserCountry(lat, lng)
 
   const dbRows = ((data || []) as Result[])
-    .filter((r) => Number.isFinite(Number(r.price)))
-    .filter(hasCoords)
+  .filter((r) => Number.isFinite(Number(r.price)))
+  .filter(hasCoords)
+  .filter((r) =>
+    isPlausibleFuelPrice(r.country_code, r.fuel_type, Number(r.price))
+  )
 
   const austriaRows =
     countryFilter === 'ALL' || countryFilter === 'AT'
