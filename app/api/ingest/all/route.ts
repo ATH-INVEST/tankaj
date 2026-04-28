@@ -63,6 +63,8 @@ export async function GET(req: NextRequest) {
     callIngest(origin, '/api/ingest/slovenia', req),
     callIngest(origin, '/api/ingest/croatia', req),
     callIngest(origin, '/api/ingest/italy', req),
+    callIngest(origin, '/api/ingest/ev', req),
+    callIngest(origin, '/api/ingest/ev-prices', req),
   ])
 
   return NextResponse.json({
