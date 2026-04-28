@@ -234,6 +234,22 @@ export async function GET(req: NextRequest) {
 
         if (!fuelType) continue;
 
+        if (fuelType === "PETROL_95" && (price < 1.2 || price > 2.5)) continue;
+        if (fuelType === "DIESEL" && (price < 1.2 || price > 2.5)) continue;
+        if (fuelType === "PETROL_100" && (price < 1.3 || price > 3.0)) continue;
+        if (fuelType === "PETROL_98" && (price < 1.3 || price > 3.0)) continue;
+        if (fuelType === "PREMIUM_DIESEL" && (price < 1.3 || price > 3.0))
+          continue;
+        if (fuelType === "LPG" && (price < 0.4 || price > 1.8)) continue;
+
+        prices.push({
+          fuelType,
+          price: Number(price.toFixed(3)),
+          rawProductName: rawFuelName,
+        });
+
+        if (!fuelType) continue;
+
         prices.push({
           fuelType,
           price: Number(price.toFixed(3)),
