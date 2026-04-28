@@ -353,7 +353,10 @@ export async function GET(req: NextRequest) {
       .filter((row): row is NonNullable<typeof row> => row !== null);
 
     for (const part of chunk(pricePayloads, PRICE_BATCH_SIZE)) {
-      const { error } = await supabase.from("fuel_prices").insert(part);
+      const { error } = await supabase.from("fuel_prices").upsert(part, {
+        onConflict: "location_id,fuel_type,source,source_updated_at",
+        ignoreDuplicates: true,
+      });
       if (error) throw error;
     }
 
