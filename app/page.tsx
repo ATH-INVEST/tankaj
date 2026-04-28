@@ -589,11 +589,24 @@ runSearch(nextCoords)
   }
 
   return (
-    <main id="top" className="min-h-screen overflow-x-hidden bg-[#06140f] pb-24 text-white md:pb-0">
+    <main id="top" className="relative min-h-dvh w-full max-w-[100svw] overflow-x-clip bg-[#06140f] pb-[calc(96px+env(safe-area-inset-bottom))] text-white md:pb-0">
+      <style jsx global>{`
+        html,
+        body {
+          max-width: 100%;
+          overflow-x: hidden;
+          overscroll-behavior-x: none;
+        }
+
+        #top,
+        #top * {
+          box-sizing: border-box;
+        }
+      `}</style>
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(185,251,106,.23),transparent_28%),radial-gradient(circle_at_92%_12%,rgba(44,120,76,.24),transparent_34%),linear-gradient(180deg,#071a12_0%,#04100b_100%)]" />
 
-      <section className="relative mx-auto flex min-h-screen max-w-[1320px] flex-col px-4 py-4 sm:px-6 lg:px-8 lg:py-7">
-        <div className="grid flex-1 gap-4 lg:grid-cols-2 xl:gap-6">
+      <section className="relative mx-auto flex min-h-dvh w-full max-w-[1320px] min-w-0 flex-col px-3 py-3 sm:px-6 lg:px-8 lg:py-7">
+        <div className="grid w-full min-w-0 flex-1 grid-cols-1 gap-4 overflow-hidden lg:grid-cols-2 xl:gap-6">
           <HeroSearch
             fuelType={fuelType}
             setFuelType={setFuelType}
@@ -676,7 +689,7 @@ function HeroSearch({
   setCountry,
 }: any) {
   return (
-    <div className="rounded-[30px] border border-white/10 bg-white/[0.055] p-4 shadow-[0_25px_80px_rgba(0,0,0,.25)] backdrop-blur-2xl sm:p-6 lg:min-h-[720px] lg:p-8">
+    <div className="w-full min-w-0 max-w-full overflow-hidden rounded-[30px] border border-white/10 bg-white/[0.055] p-4 shadow-[0_25px_80px_rgba(0,0,0,.25)] backdrop-blur-2xl sm:p-6 lg:min-h-[720px] lg:p-8">
       <div className="flex items-center justify-between gap-4">
         <div className="text-3xl font-black italic tracking-tight sm:text-4xl">
           Tankaj<span className="text-[#b9fb6a]">.si</span>
@@ -691,7 +704,7 @@ function HeroSearch({
         <span>Slovenija, Hrvaška, Avstrija, Italija</span>
       </div>
 
-      <h1 className="mt-6 max-w-xl text-[48px] font-black leading-[.93] tracking-[-.055em] sm:text-[64px] lg:text-[72px] xl:text-[78px]">
+      <h1 className="mt-6 max-w-xl text-[42px] font-black leading-[.94] tracking-[-.055em] sm:text-[64px] lg:text-[72px] xl:text-[78px]">
         Ne tankaj več na pamet.
       </h1>
 
@@ -707,8 +720,8 @@ function HeroSearch({
         </div>
       )}
 
-      <div className="mt-4 rounded-[26px] border border-white/10 bg-[#123024]/72 p-3 sm:p-4 lg:p-5">
-        <div className="grid gap-4 sm:grid-cols-2 items-end">
+      <div className="mt-4 w-full min-w-0 max-w-full overflow-hidden rounded-[26px] border border-white/10 bg-[#123024]/72 p-3 sm:p-4 lg:p-5">
+        <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 items-end">
           <SelectDark label="Gorivo" value={fuelType} onChange={setFuelType} options={[['PETROL_95', 'Bencin 95'], ['DIESEL', 'Dizel']]} />
           <SelectDark label="Radius" value={String(radius)} onChange={(v) => setRadius(Number(v))} options={[['5', '5 km'], ['10', '10 km'], ['25', '25 km'], ['50', '50 km'], ['100', '100 km'], ['200', '200 km']]} />
 
@@ -746,7 +759,7 @@ className="h-[56px] sm:h-[64px] rounded-2xl bg-[#b9fb6a] px-5 text-sm font-black
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-3 gap-2">
+      <div className="mt-4 grid min-w-0 grid-cols-3 gap-2 [&>*]:min-w-0">
         <ToggleInfo title="Gorivo" text="Cena × količina" active={includeFuel} onClick={() => setIncludeFuel((v: boolean) => !v)} />
         <ToggleInfo title="Pot" text="Realna vožnja" active={includePath} onClick={() => setIncludePath((v: boolean) => !v)} />
         <ToggleInfo title="Čas" text="Privzeto 12 €/h" active={includeTime} onClick={() => setIncludeTime((v: boolean) => !v)} />
@@ -780,7 +793,7 @@ function ResultPanel({
   crossBorderInsight,
 }: any) {
   return (
-    <div id="result" className="rounded-[30px] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(185,251,106,.18),transparent_32%),linear-gradient(180deg,rgba(15,48,34,.86),rgba(5,20,14,.88))] p-4 shadow-[0_25px_80px_rgba(0,0,0,.25)] backdrop-blur-2xl sm:p-6 lg:min-h-[720px] lg:p-8">
+    <div id="result" className="w-full min-w-0 max-w-full overflow-hidden rounded-[30px] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(185,251,106,.18),transparent_32%),linear-gradient(180deg,rgba(15,48,34,.86),rgba(5,20,14,.88))] p-3 shadow-[0_25px_80px_rgba(0,0,0,.25)] backdrop-blur-2xl sm:p-6 lg:min-h-[720px] lg:p-8">
       {loading && <LoadingState status={status} />}
 
       {searched && !loading && status === 'done' && !best && (
@@ -802,13 +815,13 @@ function ResultPanel({
       {!loading && best && (
         <>
           <div className="mb-4 rounded-[24px] border border-white/10 bg-black/15 p-1">
-            <div className="grid grid-cols-3 gap-1">
+            <div className="grid min-w-0 grid-cols-3 gap-1">
               {sortOptions.map(([value, label]) => (
                 <button
                   key={value}
                   type="button"
                   onClick={() => setSortBy(value)}
-                  className={`rounded-[19px] px-2 py-3 text-xs font-black transition sm:text-sm ${
+                  className={`min-w-0 truncate rounded-[19px] px-1.5 py-3 text-[11px] font-black transition sm:px-2 sm:text-sm ${
                     sortBy === value
                       ? 'bg-[#b9fb6a] text-[#071a12] shadow-[0_10px_24px_rgba(185,251,106,.18)]'
                       : 'text-white/55 hover:bg-white/[0.06] hover:text-white'
@@ -840,13 +853,13 @@ function ResultPanel({
 
           {(otherResults.length > 0 || hasMore) && (
             <>
-              <div className="mt-4 flex items-center justify-between gap-3">
-                <h2 className="text-xl font-black tracking-tight">Druge odlične možnosti</h2>
+              <div className="mt-4 flex min-w-0 items-center justify-between gap-3 overflow-hidden">
+                <h2 className="min-w-0 truncate text-xl font-black tracking-tight">Druge odlične možnosti</h2>
                 {lastUpdated && <div className="text-xs text-white/40">Cene {lastUpdated}</div>}
               </div>
 
               {showOthers && otherResults.length > 0 && (
-                <div className="mt-3 space-y-2.5 lg:space-y-3">
+                <div className="mt-3 w-full min-w-0 max-w-full space-y-2.5 overflow-hidden lg:space-y-3">
                   {otherResults.map((item: Result) => (
                     <CompactResult
                       key={item.location_id}
@@ -902,18 +915,18 @@ function BestCard({
   const displayTotal = scoreItem(item, includeFuel, includePath, includeTime)
 
   return (
-    <div className="rounded-[28px] border border-[#b9fb6a]/35 bg-[#071a12]/65 p-4 shadow-[0_18px_60px_rgba(0,0,0,.24)] sm:p-5">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-xs font-black uppercase tracking-[.26em] text-[#b9fb6a]">Najboljša izbira</div>
-          <h2 className="mt-2 text-2xl font-black tracking-tight sm:text-3xl">{item.name}</h2>
+    <div className="w-full min-w-0 max-w-full overflow-hidden rounded-[28px] border border-[#b9fb6a]/35 bg-[#071a12]/65 p-3 shadow-[0_18px_60px_rgba(0,0,0,.24)] sm:p-5">
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0 overflow-hidden">
+          <div className="text-[10px] font-black uppercase tracking-[.22em] text-[#b9fb6a] sm:text-xs sm:tracking-[.26em]">Najboljša izbira</div>
+          <h2 className="mt-2 break-words text-xl font-black leading-tight tracking-tight sm:text-3xl">{item.name}</h2>
           <div className="mt-2 text-sm text-white/50">
             {item.address}
             {item.city ? `, ${item.city}` : ''}
           </div>
 
           {item.recommendation_reason && (
-            <div className="mt-3 inline-flex max-w-xl rounded-2xl border border-[#b9fb6a]/20 bg-[#b9fb6a]/12 px-4 py-2 text-sm font-semibold leading-relaxed text-[#b9fb6a]">
+            <div className="mt-3 inline-flex max-w-full rounded-2xl border border-[#b9fb6a]/20 bg-[#b9fb6a]/12 px-3 py-2 text-xs font-semibold leading-relaxed text-[#b9fb6a] sm:px-4 sm:text-sm">
               {item.recommendation_reason}
             </div>
           )}
@@ -924,26 +937,26 @@ function BestCard({
         </div>
       </div>
 
-      <div className="mt-5 rounded-[24px] border border-white/10 bg-white/[0.075] p-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className={`flex h-12 w-12 items-center justify-center rounded-2xl text-xs font-black ${brandColor(item.brand)}`}>
+      <div className="mt-5 w-full min-w-0 max-w-full overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.075] p-3">
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_76px] items-start gap-3 sm:grid-cols-[minmax(0,1fr)_92px]">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-xs font-black sm:h-12 sm:w-12 ${brandColor(item.brand)}`}>
               {brandShort(item.brand)}
             </div>
-            <div>
+            <div className="min-w-0 overflow-hidden">
               <div className="text-xs text-white/45">Cena goriva</div>
-              <div className="text-3xl font-black text-[#b9fb6a]">{item.price.toFixed(3)} €/L</div>
+              <div className="truncate text-2xl font-black text-[#b9fb6a] sm:text-3xl">{item.price.toFixed(3)} €/L</div>
             </div>
           </div>
 
-          <div className="text-right">
+          <div className="min-w-0 text-right">
             <div className="text-xs text-white/45">Vožnja</div>
             <div className="font-black">{formatKm(item.distance_km)}</div>
             <div className="text-xs text-white/45">~{item.estimated_drive_minutes} min</div>
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-3 gap-2">
+        <div className="mt-4 grid min-w-0 grid-cols-3 gap-2 [&>*]:min-w-0">
           <CostPill label="Gorivo" value={includeFuel ? formatMoney(item.fuel_cost) : '—'} active={includeFuel} />
           <CostPill label="Pot" value={includePath ? formatMoney(item.travel_fuel_cost) : '—'} active={includePath} />
           <CostPill label="Čas" value={includeTime ? formatMoney(item.time_cost) : '—'} active={includeTime} />
@@ -1016,10 +1029,10 @@ function CompactResult({
           station_brand: item.brand || null,
         })
       }
-      className="block rounded-[22px] border border-white/8 bg-white/[0.06] p-3 transition hover:bg-white/[0.09]"
+      className="block w-full min-w-0 max-w-full overflow-hidden rounded-[22px] border border-white/8 bg-white/[0.06] p-3 transition hover:bg-white/[0.09]"
     >
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
+      <div className="grid min-w-0 grid-cols-[44px_minmax(0,1fr)_78px] items-center gap-3 sm:grid-cols-[44px_minmax(0,1fr)_92px]">
+        <div className="contents">
           <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-xs font-black ${brandColor(item.brand)}`}>
             {brandShort(item.brand)}
           </div>
@@ -1033,11 +1046,11 @@ function CompactResult({
           </div>
         </div>
 
-        <div className="shrink-0 text-right">
+        <div className="min-w-0 shrink-0 text-right">
           <div className="text-xs font-black text-white/80">{formatKm(item.distance_km)}</div>
           <div className="text-[11px] text-white/40">~{item.estimated_drive_minutes} min</div>
           <div className="mt-1 text-[10px] text-white/40">skupaj</div>
-          <div className="text-sm font-black text-[#b9fb6a]">{formatMoney(displayTotal)}</div>
+          <div className="truncate text-sm font-black text-[#b9fb6a]">{formatMoney(displayTotal)}</div>
         </div>
       </div>
     </a>
@@ -1094,9 +1107,9 @@ function EmptyState({ text }: { text: string }) {
 
 function CostPill({ label, value, active = true }: { label: string; value: string; active?: boolean }) {
   return (
-    <div className={`rounded-2xl p-3 ${active ? 'bg-white/10' : 'bg-white/[0.035] opacity-45'}`}>
-      <div className="text-[10px] font-black uppercase tracking-[.18em] text-white/38">{label}</div>
-      <div className="mt-1 text-sm font-black">{value}</div>
+    <div className={`min-w-0 overflow-hidden rounded-2xl p-2.5 sm:p-3 ${active ? 'bg-white/10' : 'bg-white/[0.035] opacity-45'}`}>
+      <div className="truncate text-[9px] font-black uppercase tracking-[.14em] text-white/38 sm:text-[10px] sm:tracking-[.18em]">{label}</div>
+      <div className="mt-1 truncate text-xs font-black sm:text-sm">{value}</div>
     </div>
   )
 }
@@ -1116,17 +1129,17 @@ function ToggleInfo({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-2xl border p-3 text-left transition ${
+      className={`min-w-0 overflow-hidden rounded-2xl border p-2.5 text-left transition sm:p-3 ${
         active
           ? 'border-[#b9fb6a]/35 bg-[#b9fb6a]/12'
           : 'border-white/10 bg-white/[0.04] opacity-55'
       }`}
     >
       <div className="flex items-center justify-between gap-2">
-        <div className="text-sm font-black text-white">{title}</div>
+        <div className="min-w-0 truncate text-xs font-black text-white sm:text-sm">{title}</div>
         <div className={`h-4 w-4 rounded-full border ${active ? 'border-[#b9fb6a] bg-[#b9fb6a]' : 'border-white/25'}`} />
       </div>
-      <div className="mt-1 text-xs text-white/45">{text}</div>
+      <div className="mt-1 truncate text-[10px] text-white/45 sm:text-xs">{text}</div>
     </button>
   )
 }
@@ -1134,15 +1147,15 @@ function ToggleInfo({
 function MiniInfo({ title, text }: { title: string; text: string }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-3">
-      <div className="text-sm font-black text-white">{title}</div>
-      <div className="mt-1 text-xs text-white/45">{text}</div>
+      <div className="min-w-0 truncate text-xs font-black text-white sm:text-sm">{title}</div>
+      <div className="mt-1 truncate text-[10px] text-white/45 sm:text-xs">{text}</div>
     </div>
   )
 }
 
 function HowItWorks() {
   return (
-    <section id="how-it-works" className="mt-5 rounded-[30px] border border-white/10 bg-white/[0.055] p-5 backdrop-blur-2xl sm:p-7">
+    <section id="how-it-works" className="mt-5 w-full min-w-0 max-w-full overflow-hidden rounded-[30px] border border-white/10 bg-white/[0.055] p-5 backdrop-blur-2xl sm:p-7">
       <h2 className="text-3xl font-black tracking-tight">Kako deluje?</h2>
       <p className="mt-4 max-w-4xl text-sm leading-relaxed text-white/60 sm:text-base">
         Tankaj.si samodejno izračuna realne poti do črpalk v izbranem radiju. Nato lahko rezultat takoj razvrščaš po priporočilu, najnižji ceni ali najbližji poti. Uporabnik lahko sam določi, ali se pri skupnem strošku upoštevajo gorivo, pot in čas.
@@ -1165,11 +1178,11 @@ function ModeSwitch({
   setAppMode: (value: 'nearby' | 'route') => void
 }) {
   return (
-    <div className="mt-6 grid grid-cols-2 rounded-[22px] border border-white/10 bg-black/15 p-1">
+    <div className="mt-6 grid min-w-0 grid-cols-2 rounded-[22px] border border-white/10 bg-black/15 p-1">
       <button
         type="button"
         onClick={() => setAppMode('nearby')}
-        className={`rounded-[18px] px-4 py-3 text-sm font-black transition ${
+        className={`min-w-0 truncate rounded-[18px] px-3 py-3 text-sm font-black transition ${
           appMode === 'nearby'
             ? 'bg-[#b9fb6a] text-[#071a12] shadow-[0_10px_24px_rgba(185,251,106,.18)]'
             : 'text-white/55 hover:text-white'
@@ -1181,7 +1194,7 @@ function ModeSwitch({
       <button
         type="button"
         onClick={() => setAppMode('route')}
-        className={`rounded-[18px] px-4 py-3 text-sm font-black transition ${
+        className={`min-w-0 truncate rounded-[18px] px-3 py-3 text-sm font-black transition ${
           appMode === 'route'
             ? 'bg-[#b9fb6a] text-[#071a12] shadow-[0_10px_24px_rgba(185,251,106,.18)]'
             : 'text-white/55 hover:text-white'
@@ -1219,7 +1232,7 @@ function CrossBorderCard({
           station_brand: insight.station.brand || null,
         })
       }
-      className={`mt-3 block rounded-[22px] border p-4 transition ${
+      className={`mt-3 block w-full min-w-0 max-w-full overflow-hidden rounded-[22px] border p-4 transition ${
         insight.isWorthIt
           ? 'border-[#b9fb6a]/35 bg-[#b9fb6a]/12 hover:bg-[#b9fb6a]/16'
           : 'border-white/10 bg-white/[0.045] hover:bg-white/[0.07]'
