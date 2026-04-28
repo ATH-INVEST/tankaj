@@ -350,19 +350,17 @@ function buildRow(params: {
 
   const usablePowerKw = Math.max(11, Math.min(maxPowerKw || 22, 250));
 
-const estimatedChargingMinutes = Math.round(
-  (params.amountKwh / usablePowerKw) * 60,
-);
+  const estimatedChargingMinutes = Math.round(
+    (params.amountKwh / usablePowerKw) * 60,
+  );
 
-const chargingSpeedPenalty = round(
-  (estimatedChargingMinutes / 60) * params.timeValue,
-);
+  const chargingSpeedPenalty = round(
+    (estimatedChargingMinutes / 60) * params.timeValue,
+  );
 
-const effectiveTotalCost = round(chargingCost + travelFuelCost + timeCost);
+  const effectiveTotalCost = round(chargingCost + travelFuelCost + timeCost);
 
-const tankajScore = round(
-  effectiveTotalCost + chargingSpeedPenalty,
-);
+  const tankajScore = round(effectiveTotalCost + chargingSpeedPenalty);
 
   return {
     location_id: params.location.id,
@@ -386,7 +384,7 @@ const tankajScore = round(
     time_cost: timeCost,
     effective_total_cost: effectiveTotalCost,
     tankaj_score: tankajScore,
-estimated_charging_minutes: estimatedChargingMinutes,
+    estimated_charging_minutes: estimatedChargingMinutes,
     is_cross_border: params.userCountry
       ? Boolean(
           params.location.country_code &&

@@ -11,17 +11,17 @@ Je **decision engine**, ki upošteva realne stroške poti in ti predlaga najbolj
 
 Večina aplikacij pokaže:
 
-* najcenejšo ceno na liter
-* najbližjo črpalko
+- najcenejšo ceno na liter
+- najbližjo črpalko
 
 👉 ampak to pogosto **ni optimalna odločitev**
 
 Tankaj.si izračuna:
 
-* dejanski strošek poti
-* porabo vozila
-* čas vožnje
-* potencialni prihranek
+- dejanski strošek poti
+- porabo vozila
+- čas vožnje
+- potencialni prihranek
 
 ➡️ in poda **najboljšo realno izbiro**
 
@@ -31,12 +31,12 @@ Tankaj.si izračuna:
 
 Aplikacija upošteva:
 
-* 📍 tvojo lokacijo
-* ⛽ cene goriva
-* 🚗 porabo vozila
-* 📏 razdaljo (realna pot, ne zračna)
-* ⏱ čas vožnje (vrednoten)
-* 💸 skupni strošek (gorivo + pot)
+- 📍 tvojo lokacijo
+- ⛽ cene goriva
+- 🚗 porabo vozila
+- 📏 razdaljo (realna pot, ne zračna)
+- ⏱ čas vožnje (vrednoten)
+- 💸 skupni strošek (gorivo + pot)
 
 Rezultat ni “najcenejša črpalka”, ampak:
 
@@ -46,19 +46,19 @@ Rezultat ni “najcenejša črpalka”, ampak:
 
 ## 🌍 Trenutna pokritost
 
-* 🇸🇮 Slovenija
-* 🇭🇷 Hrvaška
-* 🇦🇹 Avstrija
-* 🇮🇹 Italija
+- 🇸🇮 Slovenija
+- 🇭🇷 Hrvaška
+- 🇦🇹 Avstrija
+- 🇮🇹 Italija
 
 ---
 
 ## 🔜 Naslednji koraki
 
-* ⚡ EV polnilnice
-* 🇭🇺 Madžarska
-* 📊 izboljšan recommendation engine
-* ⚡ performance optimizacija
+- ⚡ EV polnilnice
+- 🇭🇺 Madžarska
+- 📊 izboljšan recommendation engine
+- ⚡ performance optimizacija
 
 ---
 
@@ -66,21 +66,21 @@ Rezultat ni “najcenejša črpalka”, ampak:
 
 **Beta verzija**
 
-* real data
-* real routing
-* aktivni razvoj
-* hitre iteracije
+- real data
+- real routing
+- aktivni razvoj
+- hitre iteracije
 
 ---
 
 ## 🛠 Tech stack
 
-* **Next.js (App Router)**
-* **React**
-* **Supabase (DB + backend)**
-* **Vercel (deploy)**
-* **Geolocation API**
-* **Routing / distance calculations**
+- **Next.js (App Router)**
+- **React**
+- **Supabase (DB + backend)**
+- **Vercel (deploy)**
+- **Geolocation API**
+- **Routing / distance calculations**
 
 ---
 
@@ -103,10 +103,10 @@ http://localhost:3000
 
 ## 🗂 Ključne stvari v projektu
 
-* `app/page.tsx` → glavni UI + logika prikaza rezultatov
-* `app/api/*` → API route-i (routing, izračuni, data fetch)
-* `lib/` → shared logika
-* `supabase/` → baza + struktura
+- `app/page.tsx` → glavni UI + logika prikaza rezultatov
+- `app/api/*` → API route-i (routing, izračuni, data fetch)
+- `lib/` → shared logika
+- `supabase/` → baza + struktura
 
 ---
 
@@ -114,10 +114,10 @@ http://localhost:3000
 
 Aplikacija mora biti:
 
-* 📱 mobile-first
-* ⚡ hitra
-* 🧼 enostavna
-* 💎 premium UI (Stripe / Apple feel)
+- 📱 mobile-first
+- ⚡ hitra
+- 🧼 enostavna
+- 💎 premium UI (Stripe / Apple feel)
 
 Uporabnik:
 

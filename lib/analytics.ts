@@ -1,15 +1,15 @@
 export function trackEvent(
   name: string,
-  params?: Record<string, string | number | boolean | null | undefined>
+  params?: Record<string, string | number | boolean | null | undefined>,
 ) {
-  if (typeof window === 'undefined') return
+  if (typeof window === "undefined") return;
 
-  const gtag = (window as any).gtag
+  const gtag = (window as any).gtag;
 
-  if (typeof gtag !== 'function') return
+  if (typeof gtag !== "function") return;
 
-  gtag('event', name, {
-    app_name: 'tankaj',
+  gtag("event", name, {
+    app_name: "tankaj",
     ...params,
-  })
+  });
 }

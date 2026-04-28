@@ -37,7 +37,9 @@ function isAuthorized(req: NextRequest) {
 }
 
 function normalize(value?: string | null) {
-  return String(value || "").trim().toUpperCase();
+  return String(value || "")
+    .trim()
+    .toUpperCase();
 }
 
 function matchesOperator(location: any, rule: TariffRule) {
@@ -48,15 +50,18 @@ function matchesOperator(location: any, rule: TariffRule) {
 function matchesPower(location: any, rule: TariffRule) {
   const maxPower = Number(location.max_power_kw || 0);
 
-  if (rule.minPowerKw && maxPower > 0 && maxPower < rule.minPowerKw) return false;
-  if (rule.maxPowerKw && maxPower > 0 && maxPower > rule.maxPowerKw) return false;
+  if (rule.minPowerKw && maxPower > 0 && maxPower < rule.minPowerKw)
+    return false;
+  if (rule.maxPowerKw && maxPower > 0 && maxPower > rule.maxPowerKw)
+    return false;
 
   return true;
 }
 
 function chunk<T>(items: T[], size: number) {
   const chunks: T[][] = [];
-  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
+  for (let i = 0; i < items.length; i += size)
+    chunks.push(items.slice(i, i + size));
   return chunks;
 }
 
@@ -187,7 +192,10 @@ const TARIFF_RULES: TariffRule[] = [
 
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { success: false, error: "Unauthorized" },
+      { status: 401 },
+    );
   }
 
   const startedAt = new Date().toISOString();

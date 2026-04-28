@@ -347,8 +347,17 @@ export default function Home() {
   const [sortBy, setSortBy] = useState<SortBy>("smart");
   const [evChargingMode, setEvChargingMode] = useState<EvChargingMode>("DC");
   const [evAmountKwh, setEvAmountKwh] = useState(30);
-  const [evMinPowerKw, setEvMinPowerKw] = useState(50);
+  const [evMinPowerKw, setEvMinPowerKw] = useState(0);
   const [evConsumptionKwh100, setEvConsumptionKwh100] = useState(21);
+  useEffect(() => {
+    if (mode !== "ev") return;
+
+    setEvMinPowerKw((prev) => {
+      if (evChargingMode === "AC") return 0;
+      if (evChargingMode === "DC" && prev < 50) return 50;
+      return prev;
+    });
+  }, [mode, evChargingMode]);
   const [showOthers, setShowOthers] = useState(false);
   const [includeFuel, setIncludeFuel] = useState(true);
   const [includePath, setIncludePath] = useState(true);
