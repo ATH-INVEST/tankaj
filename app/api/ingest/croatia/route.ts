@@ -353,11 +353,26 @@ export async function GET(req: NextRequest) {
       .filter((row): row is NonNullable<typeof row> => row !== null);
 
     for (const part of chunk(pricePayloads, PRICE_BATCH_SIZE)) {
-      const { error } = await supabase.from("fuel_prices").upsert(part, {
+      const uniqueMap = new Map<string, (typeof pricePayloads)[number]>();
+
+      for (const row of part) {
+        const key = `${row.location_id}-${row.fuel_type}-${row.source}-${row.source_updated_at}`;
+
+        if (!uniqueMap.has(key)) {
+          uniqueMap.set(key, row);
+        }
+      }
+
+      const clean = Array.from(uniqueMap.values());
+
+      const { error } = await supabase.from("fuel_prices").upsert(clean, {
         onConflict: "location_id,fuel_type,source,source_updated_at",
-        ignoreDuplicates: true,
       });
-      if (error) throw error;
+
+      if (error) {
+        console.error("Croatia ingest error:", error);
+        throw error;
+      }
     }
 
     if (syncRun.data?.id) {
