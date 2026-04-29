@@ -23,6 +23,7 @@ export default function AdminPage() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [runs, setRuns] = useState<Run[]>([]);
   const [loading, setLoading] = useState(false);
+  const [running, setRunning] = useState(false);
   const [message, setMessage] = useState("");
 
   async function loadStatus() {
@@ -60,6 +61,7 @@ export default function AdminPage() {
 
   async function triggerIngest() {
     setLoading(true);
+    setRunning(true);
     setMessage("Poganjam ingest ...");
 
     try {
@@ -80,11 +82,18 @@ export default function AdminPage() {
       setMessage("Napaka pri zagonu ingest procesa.");
     } finally {
       setLoading(false);
+      setRunning(false);
     }
   }
 
   useEffect(() => {
     loadStatus();
+
+    const interval = setInterval(() => {
+      loadStatus();
+    }, 10000);
+
+    return () => clearInterval(interval);
   }, []);
 
   return (
@@ -107,10 +116,10 @@ export default function AdminPage() {
             {loggedIn && (
               <button
                 onClick={triggerIngest}
-                disabled={loading}
+                disabled={loading || running}
                 className="rounded-2xl bg-[#b9fb6a] px-6 py-4 text-sm font-black text-[#071a12] disabled:opacity-60"
               >
-                {loading ? "Poganjam ..." : "Zaženi ingest"}
+                {loading || running ? "Poganjam ..." : "Zaženi ingest"}
               </button>
             )}
           </div>
@@ -133,6 +142,20 @@ export default function AdminPage() {
               >
                 Vstopi
               </button>
+            </div>
+          )}
+
+          {loggedIn && runs[0] && (
+            <div className="mt-6 rounded-2xl border border-[#b9fb6a]/20 bg-[#b9fb6a]/10 p-4">
+              <div className="text-xs font-black uppercase tracking-[.2em] text-[#b9fb6a]">
+                Zadnja posodobitev
+              </div>
+              <div className="mt-1 text-lg font-black text-white">
+                {formatDate(runs[0].finished_at || runs[0].started_at)}
+              </div>
+              <div className="mt-1 text-sm text-white/60">
+                Zadnji vir: {runs[0].source} · status: {runs[0].status}
+              </div>
             </div>
           )}
 
@@ -162,10 +185,10 @@ export default function AdminPage() {
                   <div
                     className={
                       run.status === "success"
-                        ? "font-black text-[#b9fb6a]"
+                        ? "inline-flex rounded-lg bg-[#b9fb6a]/10 px-2 py-1 font-black text-[#b9fb6a]"
                         : run.status === "failed"
-                          ? "font-black text-red-300"
-                          : "font-black text-white/60"
+                          ? "inline-flex rounded-lg bg-red-500/15 px-2 py-1 font-black text-red-300"
+                          : "inline-flex rounded-lg bg-white/10 px-2 py-1 font-black text-white/60"
                     }
                   >
                     {run.status}
