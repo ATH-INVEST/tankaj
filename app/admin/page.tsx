@@ -145,19 +145,62 @@ export default function AdminPage() {
             </div>
           )}
 
-          {loggedIn && runs[0] && (
-            <div className="mt-6 rounded-2xl border border-[#b9fb6a]/20 bg-[#b9fb6a]/10 p-4">
-              <div className="text-xs font-black uppercase tracking-[.2em] text-[#b9fb6a]">
-                Zadnja posodobitev
-              </div>
-              <div className="mt-1 text-lg font-black text-white">
-                {formatDate(runs[0].finished_at || runs[0].started_at)}
-              </div>
-              <div className="mt-1 text-sm text-white/60">
-                Zadnji vir: {runs[0].source} · status: {runs[0].status}
-              </div>
-            </div>
-          )}
+          {loggedIn &&
+            runs.length > 0 &&
+            (() => {
+              const latestStartedAt = runs[0].started_at;
+              const latestBatch = runs.filter(
+                (run) => run.started_at === latestStartedAt,
+              );
+              const allSuccess = latestBatch.every(
+                (run) => run.status === "success",
+              );
+
+              return (
+                <div className="mt-6 rounded-2xl border border-[#b9fb6a]/20 bg-[#b9fb6a]/10 p-4">
+                  <div className="text-xs font-black uppercase tracking-[.2em] text-[#b9fb6a]">
+                    Zadnja posodobitev
+                  </div>
+
+                  <div className="mt-1 text-lg font-black text-white">
+                    {formatDate(
+                      latestBatch
+                        .map((run) => run.finished_at || run.started_at)
+                        .sort()
+                        .at(-1),
+                    )}
+                  </div>
+
+                  <div className="mt-2 text-sm text-white/60">
+                    Status:{" "}
+                    <span
+                      className={
+                        allSuccess
+                          ? "font-black text-[#b9fb6a]"
+                          : "font-black text-red-300"
+                      }
+                    >
+                      {allSuccess ? "vse uspešno" : "delna napaka"}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {latestBatch.map((run) => (
+                      <span
+                        key={run.id}
+                        className={`rounded-full px-3 py-1 text-xs font-black ${
+                          run.status === "success"
+                            ? "bg-[#b9fb6a]/12 text-[#b9fb6a]"
+                            : "bg-red-500/15 text-red-300"
+                        }`}
+                      >
+                        {run.source}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
           {message && (
             <div className="mt-5 rounded-2xl border border-[#b9fb6a]/20 bg-[#b9fb6a]/10 p-4 text-sm text-[#d9ff9b]">
