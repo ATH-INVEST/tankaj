@@ -38,6 +38,24 @@ type EvPrice = {
   captured_at?: string | null;
 };
 
+type EvDbTariff = {
+  id?: string | null;
+  provider: string;
+  country_code: string;
+  tariff_code?: string | null;
+  tariff_name: string;
+  power_type?: string | null;
+  min_power_kw?: number | null;
+  max_power_kw?: number | null;
+  price_per_kwh: number;
+  is_subscription?: boolean | null;
+  is_verified?: boolean | null;
+  source_url?: string | null;
+  note?: string | null;
+  valid_from?: string | null;
+  captured_at?: string | null;
+};
+
 type ReferenceTariff = {
   country_code: string;
   power_type: string;
@@ -52,7 +70,7 @@ const INITIAL_LIMIT = 16;
 const MORE_LIMIT = 5;
 const ROUTING_CONCURRENCY = 8;
 const TIME_VALUE_DEFAULT = 12;
-const EV_CONSUMPTION_DEFAULT = 18;
+const EV_CONSUMPTION_DEFAULT = 21;
 const ROUTE_CACHE_DAYS = 30;
 
 function round(value: number, decimals = 2) {
@@ -93,6 +111,10 @@ function countryMatches(
   );
 }
 
+function normalizeOperator(value?: string | null) {
+  return value ? value.trim().toUpperCase() : "";
+}
+
 function powerMatches(
   location: EvLocation,
   powerType: PowerType,
@@ -117,19 +139,65 @@ function powerMatches(
   if (powerType === "AC") {
     if (maxPower > 43) return false;
 
-    return (
+    const looksLikeAc =
       connectors.includes("type 2") ||
       connectors.includes("type2") ||
       connectors.includes("schuko") ||
-      maxPower <= 43
-    );
+      maxPower <= 43;
+
+    if (!looksLikeAc) return false;
+
+    // AC filter:
+    // 0  = vse AC
+    // 11 = do 11 kW
+    // 22 = 22 kW+
+    if (minPowerKw === 11) {
+      return maxPower > 0 ? maxPower <= 11.5 : true;
+    }
+
+    if (minPowerKw === 22) {
+      return maxPower >= 22;
+    }
+
+    return true;
   }
 
   return true;
 }
 
-function normalizeOperator(value?: string | null) {
-  return value ? value.trim().toUpperCase() : "";
+function pickTariffFromDb(
+  location: EvLocation,
+  powerType: PowerType,
+  tariffs: EvDbTariff[],
+  useSubscriptionPrices: boolean,
+) {
+  const operator = normalizeOperator(location.operator || location.name);
+  const country = String(location.country_code || "").toUpperCase();
+  const power = Number(location.max_power_kw || 0) || 22;
+
+  const matching = tariffs.filter((tariff) => {
+    const provider = normalizeOperator(tariff.provider);
+    const tariffCountry = String(tariff.country_code || "").toUpperCase();
+    const tariffPowerType = String(tariff.power_type || "").toUpperCase();
+    const minPower = Number(tariff.min_power_kw || 0);
+    const maxPower = Number(tariff.max_power_kw || 0);
+
+    if (provider && !operator.includes(provider)) return false;
+    if (tariffCountry && tariffCountry !== country) return false;
+    if (tariffPowerType && tariffPowerType !== powerType) return false;
+    if (minPower > 0 && power < minPower) return false;
+    if (maxPower > 0 && power > maxPower) return false;
+
+    return useSubscriptionPrices
+      ? tariff.is_subscription === true
+      : tariff.is_subscription !== true;
+  });
+
+  if (!matching.length) return null;
+
+  return [...matching].sort(
+    (a, b) => Number(a.price_per_kwh) - Number(b.price_per_kwh),
+  )[0];
 }
 
 function pickVerifiedPrice(
@@ -148,13 +216,15 @@ function pickVerifiedPrice(
 
     const priceOperator = normalizeOperator(price.operator_name);
     if (price.ev_location_id === location.id) return true;
-    if (priceOperator && operator && operator.includes(priceOperator))
+    if (priceOperator && operator && operator.includes(priceOperator)) {
       return true;
+    }
 
     return false;
   });
 
   if (!candidates.length) return null;
+
   return candidates.sort(
     (a, b) =>
       (a.tariff_scope === "location" ? 0 : 1) -
@@ -195,6 +265,7 @@ async function mapWithConcurrency<T, R>(
   await Promise.all(
     Array.from({ length: Math.min(concurrency, items.length) }, () => worker()),
   );
+
   return results;
 }
 
@@ -271,10 +342,12 @@ async function getOsrm(
     );
 
     if (!res.ok) throw new Error(`OSRM failed: ${res.status}`);
+
     const json = await res.json();
     const route = json?.routes?.[0];
-    if (!route?.distance || !route?.duration)
+    if (!route?.distance || !route?.duration) {
       throw new Error("OSRM returned no route");
+    }
 
     return {
       distance_km: route.distance / 1000,
@@ -315,9 +388,13 @@ function sortFinal(rows: any[], sortBy: SortBy) {
       if (a.price !== b.price) return a.price - b.price;
       return a.distance_km - b.distance_km;
     }
+
     if (sortBy === "distance") return a.distance_km - b.distance_km;
-    if (a.tankaj_score !== b.tankaj_score)
+
+    if (a.tankaj_score !== b.tankaj_score) {
       return a.tankaj_score - b.tankaj_score;
+    }
+
     return a.distance_km - b.distance_km;
   });
 }
@@ -340,6 +417,9 @@ function buildRow(params: {
   sourceUrl: string | null;
   tariffNote: string | null;
   capturedAt: string | null;
+  basePricePerKwh?: number | null;
+  appliedTariff?: EvDbTariff | null;
+  subscriptionTariffs?: EvDbTariff[];
 }) {
   const chargingCost = round(params.amountKwh * params.pricePerKwh);
   const travelFuelCost = round(
@@ -347,19 +427,14 @@ function buildRow(params: {
   );
   const timeCost = round((params.route.duration_min / 60) * params.timeValue);
   const maxPowerKw = Number(params.location.max_power_kw || 0);
-
   const usablePowerKw = Math.max(11, Math.min(maxPowerKw || 22, 250));
-
   const estimatedChargingMinutes = Math.round(
     (params.amountKwh / usablePowerKw) * 60,
   );
-
   const chargingSpeedPenalty = round(
     (estimatedChargingMinutes / 60) * params.timeValue,
   );
-
   const effectiveTotalCost = round(chargingCost + travelFuelCost + timeCost);
-
   const tankajScore = round(effectiveTotalCost + chargingSpeedPenalty);
 
   return {
@@ -378,6 +453,9 @@ function buildRow(params: {
     is_real_route: true,
     fuel_type: `EV_${params.powerType}`,
     price: round(params.pricePerKwh, 3),
+    base_price: params.basePricePerKwh
+      ? round(params.basePricePerKwh, 3)
+      : round(params.pricePerKwh, 3),
     price_unit: "€/kWh",
     fuel_cost: chargingCost,
     travel_fuel_cost: travelFuelCost,
@@ -391,9 +469,11 @@ function buildRow(params: {
           params.location.country_code !== params.userCountry,
         )
       : false,
-    recommendation_reason: params.isVerified
-      ? "Najboljša kombinacija znane cene, poti in časa."
-      : "Ocena na podlagi referenčne tarife za državo in tip polnjenja.",
+    recommendation_reason: params.appliedTariff?.is_subscription
+      ? "Najboljša kombinacija izbranega EV paketa, poti, časa in moči polnilnice."
+      : params.isVerified
+        ? "Najboljša kombinacija znane tarife, poti in časa."
+        : "Ocena na podlagi referenčne tarife za državo in tip polnjenja.",
     captured_at: params.capturedAt,
     max_power_kw: maxPowerKw || null,
     connector_types: params.location.connector_types || [],
@@ -402,7 +482,22 @@ function buildRow(params: {
     price_confidence: params.isVerified ? "verified" : "estimated",
     price_source_name: params.sourceName,
     price_source_url: params.sourceUrl,
-    tariff_note: params.tariffNote,
+    tariff_note: params.appliedTariff?.note || params.tariffNote,
+    applied_tariff_id:
+      params.appliedTariff?.tariff_code || params.appliedTariff?.id || null,
+    applied_tariff_name: params.appliedTariff?.tariff_name || null,
+    applied_tariff_price: params.appliedTariff
+      ? round(Number(params.appliedTariff.price_per_kwh), 3)
+      : null,
+    subscription_tariffs: (params.subscriptionTariffs || []).map((tariff) => ({
+      id: tariff.tariff_code || tariff.id || null,
+      provider: tariff.provider,
+      name: tariff.tariff_name,
+      price: round(Number(tariff.price_per_kwh), 3),
+      countries: [tariff.country_code],
+      note: tariff.note,
+      is_subscription: tariff.is_subscription === true,
+    })),
   };
 }
 
@@ -440,6 +535,9 @@ export async function GET(req: Request) {
   );
   const countryFilter = searchParams.get("country") || "ALL";
   const includeEstimated = searchParams.get("includeEstimated") === "true";
+  const useSubscriptionPrices =
+    searchParams.get("useEvSubscriptionPrices") === "true" ||
+    searchParams.get("useEvSubscriptionPrices") === "1";
 
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return NextResponse.json(
@@ -473,27 +571,34 @@ export async function GET(req: Request) {
     );
   }
 
-  if (countryFilter !== "ALL")
+  if (countryFilter !== "ALL") {
     locationQuery = locationQuery.eq("country_code", countryFilter);
+  }
 
   const { data: locationData, error: locationError } = await locationQuery;
-  if (locationError)
+
+  if (locationError) {
     return NextResponse.json(
       { success: false, error: locationError },
       { status: 500 },
     );
+  }
 
   const locations = ((locationData || []) as EvLocation[])
     .filter(
-      (l) => Number.isFinite(Number(l.lat)) && Number.isFinite(Number(l.lng)),
+      (location) =>
+        Number.isFinite(Number(location.lat)) &&
+        Number.isFinite(Number(location.lng)),
     )
-    .filter((l) => countryMatches(l.country_code, countryFilter))
-    .filter((l) => powerMatches(l, powerType, minPowerKw))
+    .filter((location) => countryMatches(location.country_code, countryFilter))
+    .filter((location) => powerMatches(location, powerType, minPowerKw))
     .filter(
-      (l) => haversineKm(lat, lng, Number(l.lat), Number(l.lng)) <= marginKm,
+      (location) =>
+        haversineKm(lat, lng, Number(location.lat), Number(location.lng)) <=
+        marginKm,
     );
 
-  const locationIds = locations.map((l) => l.id);
+  const locationIds = locations.map((location) => location.id);
 
   const { data: pricesData, error: pricesError } = locationIds.length
     ? await supabase
@@ -504,11 +609,12 @@ export async function GET(req: Request) {
         .in("ev_location_id", locationIds)
     : { data: [], error: null };
 
-  if (pricesError)
+  if (pricesError) {
     return NextResponse.json(
       { success: false, error: pricesError },
       { status: 500 },
     );
+  }
 
   const { data: referenceData, error: referenceError } = await supabase
     .from("ev_tariffs_reference")
@@ -517,35 +623,70 @@ export async function GET(req: Request) {
     )
     .eq("power_type", powerType);
 
-  if (referenceError)
+  if (referenceError) {
     return NextResponse.json(
       { success: false, error: referenceError },
       { status: 500 },
     );
+  }
+
+  const { data: tariffsData, error: tariffsError } = await supabase
+    .from("ev_tariffs")
+    .select("*")
+    .eq("is_verified", true);
+
+  if (tariffsError) {
+    return NextResponse.json(
+      { success: false, error: tariffsError },
+      { status: 500 },
+    );
+  }
 
   const prices = (pricesData || []) as EvPrice[];
   const references = (referenceData || []) as ReferenceTariff[];
+  const tariffs = (tariffsData || []) as EvDbTariff[];
 
   const verifiedCandidates: any[] = [];
   const estimatedCandidates: any[] = [];
 
   for (const location of locations) {
+    const dbTariff = pickTariffFromDb(
+      location,
+      powerType,
+      tariffs,
+      useSubscriptionPrices,
+    );
+
     const verifiedPrice = pickVerifiedPrice(location, prices, powerType);
 
-    if (verifiedPrice) {
+    if (verifiedPrice || dbTariff) {
+      const basePricePerKwh = verifiedPrice
+        ? Number(verifiedPrice.price_per_kwh)
+        : Number(dbTariff?.price_per_kwh);
+
       verifiedCandidates.push({
         location,
-        pricePerKwh: Number(verifiedPrice.price_per_kwh),
+        pricePerKwh: dbTariff
+          ? Number(dbTariff.price_per_kwh)
+          : basePricePerKwh,
+        basePricePerKwh,
+        appliedTariff: dbTariff,
+        subscriptionTariffs: dbTariff ? [dbTariff] : [],
         isVerified: true,
         sourceName:
-          verifiedPrice.operator_name ||
-          verifiedPrice.source ||
+          dbTariff?.provider ||
+          verifiedPrice?.operator_name ||
+          verifiedPrice?.source ||
           "Preverjen cenik",
-        sourceUrl: verifiedPrice.source_url || null,
-        tariffNote: verifiedPrice.tariff_note || null,
+        sourceUrl: dbTariff?.source_url || verifiedPrice?.source_url || null,
+        tariffNote: dbTariff?.note || verifiedPrice?.tariff_note || null,
         capturedAt:
-          verifiedPrice.verified_at || verifiedPrice.captured_at || null,
+          dbTariff?.captured_at ||
+          verifiedPrice?.verified_at ||
+          verifiedPrice?.captured_at ||
+          null,
       });
+
       continue;
     }
 
@@ -554,11 +695,17 @@ export async function GET(req: Request) {
       powerType,
       references,
     );
+
     if (!reference) continue;
+
+    const basePricePerKwh = Number(reference.price_per_kwh);
 
     estimatedCandidates.push({
       location,
-      pricePerKwh: Number(reference.price_per_kwh),
+      pricePerKwh: basePricePerKwh,
+      basePricePerKwh,
+      appliedTariff: null,
+      subscriptionTariffs: [],
       isVerified: false,
       sourceName: reference.source_name || "Referenčna tarifa",
       sourceUrl: reference.source_url || null,
@@ -571,6 +718,7 @@ export async function GET(req: Request) {
 
   const primarySource =
     verifiedCandidates.length > 0 ? verifiedCandidates : estimatedCandidates;
+
   const airSorted = [...primarySource].sort((a, b) => {
     const aAir = haversineKm(
       lat,
@@ -584,9 +732,13 @@ export async function GET(req: Request) {
       Number(b.location.lat),
       Number(b.location.lng),
     );
-    if (sortBy === "price" && a.pricePerKwh !== b.pricePerKwh)
+
+    if (sortBy === "price" && a.pricePerKwh !== b.pricePerKwh) {
       return a.pricePerKwh - b.pricePerKwh;
+    }
+
     if (sortBy === "distance") return aAir - bAir;
+
     return (
       a.pricePerKwh * amountKwh +
       aAir * 0.25 -
@@ -598,6 +750,7 @@ export async function GET(req: Request) {
     batch === "more"
       ? airSorted.slice(offset, offset + MORE_LIMIT)
       : airSorted.slice(0, INITIAL_LIMIT);
+
   const userCountry = inferUserCountry(lat, lng);
 
   async function routeCandidates(candidates: any[]) {
@@ -613,7 +766,9 @@ export async function GET(req: Request) {
               lng: Number(candidate.location.lng),
             },
           );
+
           if (route.distance_km > radius) return null;
+
           return buildRow({
             location: candidate.location,
             pricePerKwh: candidate.pricePerKwh,
@@ -628,6 +783,9 @@ export async function GET(req: Request) {
             sourceUrl: candidate.sourceUrl,
             tariffNote: candidate.tariffNote,
             capturedAt: candidate.capturedAt,
+            basePricePerKwh: candidate.basePricePerKwh,
+            appliedTariff: candidate.appliedTariff,
+            subscriptionTariffs: candidate.subscriptionTariffs,
           });
         } catch {
           return null;
@@ -665,8 +823,12 @@ export async function GET(req: Request) {
       verifiedCandidates.length > 0 ? "verified_first" : "reference_fallback",
     disclaimer:
       verifiedCandidates.length > 0
-        ? "Najprej prikazujemo polnilnice z znano tarifo. Ostale lahko prikažemo z ocenjeno referenčno tarifo."
-        : "V izbranem radiusu ni preverjenih EV tarif. Prikazujemo oceno na podlagi referenčne tarife za državo in tip polnjenja.",
+        ? useSubscriptionPrices
+          ? "Najprej prikazujemo polnilnice z znano tarifo. Ugodnejše cene s paketom so označene z zvezdico in vplivajo na razvrstitev samo pri ujemajočih se ponudnikih."
+          : "Najprej prikazujemo polnilnice z znano tarifo. Nižje paketne cene so prikazane kot informacija z zvezdico, vendar ne vplivajo na razvrstitev."
+        : useSubscriptionPrices
+          ? "V izbranem radiusu ni preverjenih EV tarif. Prikazujemo oceno; ugodnejše paketne cene vplivajo samo pri ujemajočih se ponudnikih."
+          : "V izbranem radiusu ni preverjenih EV tarif. Prikazujemo oceno na podlagi referenčne tarife za državo in tip polnjenja.",
     counts: {
       all_locations_count: locations.length,
       verified_candidates_count: verifiedCandidates.length,
@@ -675,6 +837,8 @@ export async function GET(req: Request) {
       secondary_results_count: secondaryResults.length,
       min_power_kw: minPowerKw,
       amount_kwh: amountKwh,
+      use_subscription_prices: useSubscriptionPrices,
+      db_tariffs_count: tariffs.length,
     },
   });
 }

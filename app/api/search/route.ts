@@ -24,7 +24,152 @@ type Result = {
   fuel_cost?: number | null;
   source?: string | null;
   captured_at?: string | null;
+  price_age_hours?: number | null;
+  trusted_price?: boolean;
+  price_warning?: string | null;
 };
+
+const MAX_PRICE_AGE_HOURS = 24;
+
+type PriceQuality = {
+  price_age_hours: number | null;
+  trusted_price: boolean;
+  price_warning: string | null;
+};
+
+function hoursSince(dateValue: string | null | undefined) {
+  if (!dateValue) return Infinity;
+
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return Infinity;
+
+  return (Date.now() - date.getTime()) / (1000 * 60 * 60);
+}
+
+function normalizeFuelKey(fuelType: string) {
+  return String(fuelType || "")
+    .trim()
+    .toUpperCase();
+}
+
+function isRealisticFuelPrice(
+  countryCode: string | null | undefined,
+  fuelType: string,
+  price: number,
+) {
+  if (!Number.isFinite(price) || price <= 0) return false;
+
+  const country = String(countryCode || "").toUpperCase();
+  const fuel = normalizeFuelKey(fuelType);
+
+  const isPetrol95 =
+    fuel === "PETROL_95" ||
+    fuel.includes("PETROL") ||
+    fuel.includes("BENCIN") ||
+    fuel.includes("GASOLINE") ||
+    fuel.includes("EUROSUPER") ||
+    fuel.includes("E5") ||
+    fuel.includes("E10") ||
+    fuel === "SUP";
+
+  const isDiesel =
+    fuel === "DIESEL" ||
+    fuel.includes("DIESEL") ||
+    fuel.includes("DIZEL") ||
+    fuel.includes("EURODIESEL") ||
+    fuel === "DIE";
+
+  const isLpg = fuel.includes("LPG") || fuel.includes("AUTOGAS");
+  const isCng = fuel.includes("CNG") || fuel === "GAS";
+
+  // Country-aware ranges. These are intentionally generous, but remove broken
+  // scrape values like 12.94 €/L diesel or unrealistically old/invalid records.
+  if (country === "SI") {
+    if (fuel === "ELKO") return price >= 0.9 && price <= 1.8;
+    if (isPetrol95) return price >= 1.1 && price <= 2.3;
+    if (isDiesel) return price >= 1.1 && price <= 2.3;
+    if (isLpg) return price >= 0.45 && price <= 1.3;
+  }
+
+  if (country === "HR") {
+    if (isPetrol95) return price >= 1.1 && price <= 2.3;
+    if (isDiesel) return price >= 1.1 && price <= 2.3;
+    if (isLpg) return price >= 0.45 && price <= 1.3;
+  }
+
+  if (country === "AT") {
+    if (isPetrol95) return price >= 1.2 && price <= 2.5;
+    if (isDiesel) return price >= 1.2 && price <= 2.5;
+    if (isCng) return price >= 0.7 && price <= 2.5;
+  }
+
+  if (country === "IT") {
+    if (isPetrol95) return price >= 1.3 && price <= 2.8;
+    if (isDiesel) return price >= 1.3 && price <= 2.8;
+    if (isLpg) return price >= 0.55 && price <= 1.5;
+  }
+
+  if (country === "HU") {
+    if (isPetrol95) return price >= 1.1 && price <= 2.4;
+    if (isDiesel) return price >= 1.1 && price <= 2.4;
+    if (isLpg) return price >= 0.45 && price <= 1.4;
+  }
+
+  // Fallback EU range.
+  return price >= 0.45 && price <= 3.0;
+}
+
+function getPriceQuality(
+  countryCode: string | null | undefined,
+  fuelType: string,
+  price: number,
+  capturedAt: string | null | undefined,
+): PriceQuality {
+  const age = hoursSince(capturedAt);
+  const price_age_hours = Number.isFinite(age) ? round(age, 2) : null;
+
+  if (!isRealisticFuelPrice(countryCode, fuelType, price)) {
+    return {
+      price_age_hours,
+      trusted_price: false,
+      price_warning:
+        "Cena je izven realnega razpona in ni uporabljena za priporočilo.",
+    };
+  }
+
+  if (!Number.isFinite(age)) {
+    return {
+      price_age_hours,
+      trusted_price: false,
+      price_warning:
+        "Manjka čas zajema cene, zato ni uporabljena za priporočilo.",
+    };
+  }
+
+  if (age > MAX_PRICE_AGE_HOURS) {
+    return {
+      price_age_hours,
+      trusted_price: false,
+      price_warning: `Cena je starejša od ${MAX_PRICE_AGE_HOURS} ur in ni uporabljena za priporočilo.`,
+    };
+  }
+
+  return {
+    price_age_hours,
+    trusted_price: true,
+    price_warning: null,
+  };
+}
+
+function withPriceQuality(row: Result): Result {
+  const price = Number(row.price);
+
+  return {
+    ...row,
+    price,
+    ...getPriceQuality(row.country_code, row.fuel_type, price, row.captured_at),
+  };
+}
 
 type AustriaStation = {
   id: number;
@@ -78,25 +223,6 @@ function n(v: unknown, fallback = 0) {
 
 function round(v: number, decimals = 2) {
   return Number(v.toFixed(decimals));
-}
-
-function isPlausibleFuelPrice(
-  countryCode: string | null | undefined,
-  fuelType: string,
-  price: number,
-) {
-  const country = String(countryCode || "").toUpperCase();
-
-  if (country === "SI") {
-    if (fuelType === "PETROL_95") return price >= 1.5 && price <= 1.9;
-    if (fuelType === "DIESEL") return price >= 1.45 && price <= 2.1;
-    if (fuelType === "ELKO") return price >= 1.0 && price <= 1.6;
-    if (fuelType === "PETROL_100") return price >= 1.6 && price <= 2.3;
-    if (fuelType === "PREMIUM_DIESEL") return price >= 1.6 && price <= 2.3;
-  }
-
-  // fallback EU
-  return price >= 0.8 && price <= 3.0;
 }
 
 function routeKeyCoord(value: number) {
@@ -729,16 +855,19 @@ export async function GET(req: Request) {
   const dbRows = ((data || []) as Result[])
     .filter((r) => Number.isFinite(Number(r.price)))
     .filter(hasCoords)
-    .filter((r) =>
-      isPlausibleFuelPrice(r.country_code, r.fuel_type, Number(r.price)),
-    );
+    .map(withPriceQuality);
 
   const austriaRows =
     countryFilter === "ALL" || countryFilter === "AT"
-      ? await fetchAustriaRows(lat, lng, type)
+      ? (await fetchAustriaRows(lat, lng, type))
+          .filter((r) => Number.isFinite(Number(r.price)))
+          .filter(hasCoords)
+          .map(withPriceQuality)
       : [];
 
-  let rows = uniqueByLocation([...dbRows, ...austriaRows]);
+  let rows = uniqueByLocation([...dbRows, ...austriaRows]).map(
+    withPriceQuality,
+  );
 
   if (brandFilter && brandFilter !== "ALL") {
     rows = rows.filter((r) => brandMatches(r, brandFilter));
@@ -748,10 +877,34 @@ export async function GET(req: Request) {
     rows = rows.filter((r) => countryMatches(r.country_code, countryFilter));
   }
 
-  const candidatePool =
+  const trustedRows = rows.filter((r) => r.trusted_price === true);
+  const fallbackRows = rows.filter((r) => r.trusted_price !== true);
+
+  const trustedCandidatePool =
     batch === "more"
-      ? buildMoreCandidatePool(rows, amount, sortBy, offset)
-      : buildInitialCandidatePool(rows, amount);
+      ? buildMoreCandidatePool(trustedRows, amount, sortBy, offset)
+      : buildInitialCandidatePool(trustedRows, amount);
+
+  const fallbackCandidateLimit = Math.max(
+    0,
+    INITIAL_CANDIDATE_LIMIT - trustedCandidatePool.length,
+  );
+
+  const fallbackCandidatePool =
+    batch === "more"
+      ? buildMoreCandidatePool(fallbackRows, amount, sortBy, offset).slice(
+          0,
+          fallbackCandidateLimit || MORE_LIMIT,
+        )
+      : buildInitialCandidatePool(fallbackRows, amount).slice(
+          0,
+          fallbackCandidateLimit,
+        );
+
+  const candidatePool = uniqueByLocation([
+    ...trustedCandidatePool,
+    ...fallbackCandidatePool,
+  ]);
 
   const routed = await enrich(candidatePool, { lat, lng });
   const scored = score(routed, amount, consumption, timeValue, userCountry);
@@ -764,12 +917,24 @@ export async function GET(req: Request) {
       Number.isFinite(r.effective_total_cost),
   );
 
-  const winner = pickWinner(valid, sortBy, radius);
+  const validTrusted = valid.filter((r) => r.trusted_price === true);
+  const validFallback = valid.filter((r) => r.trusted_price !== true);
 
-  const results = sortResults(
-    valid.filter((r) => r.distance_km <= radius),
+  // Winner may only come from fresh and realistic prices.
+  // Fallback rows can still be displayed lower in "Druge odlične možnosti" with a warning.
+  const winner = pickWinner(validTrusted, sortBy, radius);
+
+  const trustedResults = sortResults(
+    validTrusted.filter((r) => r.distance_km <= radius),
     sortBy,
   );
+
+  const fallbackResults = sortResults(
+    validFallback.filter((r) => r.distance_km <= radius),
+    sortBy,
+  );
+
+  const results = [...trustedResults, ...fallbackResults];
 
   const nextOffset =
     batch === "more" ? offset + MORE_LIMIT : candidatePool.length;
@@ -783,13 +948,24 @@ export async function GET(req: Request) {
     results,
     has_more: hasMore,
     next_offset: nextOffset,
+    price_policy: {
+      max_price_age_hours: MAX_PRICE_AGE_HOURS,
+      winner_requires_trusted_price: true,
+      fallback_results_are_display_only: true,
+    },
     counts: {
       all_considered_count: rows.length,
       db_count: dbRows.length,
       austria_count: austriaRows.length,
+      trusted_rows_count: trustedRows.length,
+      fallback_rows_count: fallbackRows.length,
       candidate_pool_count: candidatePool.length,
+      trusted_candidate_pool_count: trustedCandidatePool.length,
+      fallback_candidate_pool_count: fallbackCandidatePool.length,
       routed_count: routed.length,
       valid_count: valid.length,
+      valid_trusted_count: validTrusted.length,
+      valid_fallback_count: validFallback.length,
       results_count: results.length,
       rows_by_country: countByCountry(rows),
       valid_by_country: countByCountry(valid),

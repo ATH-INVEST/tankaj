@@ -7,7 +7,6 @@ type SearchMode = "fuel" | "ev";
 type SearchStatus = "idle" | "location" | "routing" | "done" | "error";
 type SortBy = "smart" | "price" | "distance";
 type EvChargingMode = "DC" | "AC";
-
 type Result = {
   location_id: string;
   name: string;
@@ -40,6 +39,27 @@ type Result = {
   price_source_name?: string | null;
   price_source_url?: string | null;
   tariff_note?: string | null;
+  base_price?: number | null;
+  applied_tariff_id?: string | null;
+  applied_tariff_name?: string | null;
+  applied_tariff_price?: number | null;
+  subscription_tariffs?: EvSubscriptionTariff[] | null;
+};
+
+type EvSubscriptionTariff = {
+  id: string;
+  provider: string;
+  name: string;
+  price: number;
+  countries: string[];
+  note: string;
+};
+
+type GeocodeResult = {
+  label: string;
+  lat: number;
+  lng: number;
+  country_code?: string | null;
 };
 
 type Preferences = {
@@ -57,6 +77,7 @@ type Preferences = {
   evAmountKwh?: number;
   evMinPowerKw?: number;
   evConsumptionKwh100?: number;
+  useEvSubscriptionPrices?: boolean;
 };
 
 const STORAGE_KEY = "tankaj_preferences_v2";
@@ -349,6 +370,7 @@ export default function Home() {
   const [evAmountKwh, setEvAmountKwh] = useState(30);
   const [evMinPowerKw, setEvMinPowerKw] = useState(0);
   const [evConsumptionKwh100, setEvConsumptionKwh100] = useState(21);
+  const [useEvSubscriptionPrices, setUseEvSubscriptionPrices] = useState(false);
   useEffect(() => {
     if (mode !== "ev") return;
 
@@ -375,6 +397,15 @@ export default function Home() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [pricingMode, setPricingMode] = useState<string | null>(null);
   const [disclaimer, setDisclaimer] = useState<string | null>(null);
+  const [showManualLocation, setShowManualLocation] = useState(false);
+  const [manualLocationQuery, setManualLocationQuery] = useState("");
+  const [manualLocationResults, setManualLocationResults] = useState<
+    GeocodeResult[]
+  >([]);
+  const [manualLocationLoading, setManualLocationLoading] = useState(false);
+  const [manualLocationError, setManualLocationError] = useState<string | null>(
+    null,
+  );
 
   const activeRequestId = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -411,6 +442,8 @@ export default function Home() {
         setEvMinPowerKw(parsed.evMinPowerKw);
       if (typeof parsed.evConsumptionKwh100 === "number")
         setEvConsumptionKwh100(parsed.evConsumptionKwh100);
+      if (typeof parsed.useEvSubscriptionPrices === "boolean")
+        setUseEvSubscriptionPrices(parsed.useEvSubscriptionPrices);
     } catch {
       window.localStorage.removeItem(STORAGE_KEY);
     } finally {
@@ -436,6 +469,7 @@ export default function Home() {
       evAmountKwh,
       evMinPowerKw,
       evConsumptionKwh100,
+      useEvSubscriptionPrices,
     };
 
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -455,6 +489,7 @@ export default function Home() {
     evAmountKwh,
     evMinPowerKw,
     evConsumptionKwh100,
+    useEvSubscriptionPrices,
   ]);
 
   const brandOptions = useMemo(() => {
@@ -576,6 +611,8 @@ export default function Home() {
         params.set("powerType", evChargingMode);
         params.set("minPowerKw", String(evMinPowerKw));
         params.set("consumption", String(evConsumptionKwh100));
+        if (useEvSubscriptionPrices)
+          params.set("useEvSubscriptionPrices", "true");
         if (batch === "more") params.set("includeEstimated", "true");
       } else {
         params.set("type", fuelType);
@@ -594,6 +631,7 @@ export default function Home() {
       evChargingMode,
       evMinPowerKw,
       evConsumptionKwh100,
+      useEvSubscriptionPrices,
       fuelType,
     ],
   );
@@ -681,9 +719,66 @@ export default function Home() {
     ],
   );
 
+  const searchManualLocation = useCallback(async (query: string) => {
+    const q = query.trim();
+    setManualLocationQuery(query);
+    setManualLocationError(null);
+
+    if (q.length < 2) {
+      setManualLocationResults([]);
+      return;
+    }
+
+    setManualLocationLoading(true);
+
+    try {
+      const res = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`);
+      const json = await res.json();
+
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || "Lokacije ni mogoče poiskati.");
+      }
+
+      setManualLocationResults((json.results || []) as GeocodeResult[]);
+    } catch (error) {
+      setManualLocationResults([]);
+      setManualLocationError(
+        error instanceof Error ? error.message : "Lokacije ni mogoče poiskati.",
+      );
+    } finally {
+      setManualLocationLoading(false);
+    }
+  }, []);
+
+  const selectManualLocation = useCallback(
+    (item: GeocodeResult) => {
+      const nextCoords = { lat: Number(item.lat), lng: Number(item.lng) };
+      if (!Number.isFinite(nextCoords.lat) || !Number.isFinite(nextCoords.lng))
+        return;
+
+      setManualLocationQuery(item.label);
+      setManualLocationResults([]);
+      setManualLocationError(null);
+      setShowManualLocation(false);
+      setCoords(nextCoords);
+      setSearched(true);
+      trackEvent("manual_location_selected", {
+        country_code: item.country_code || null,
+      });
+      runSearch(nextCoords);
+    },
+    [runSearch],
+  );
+
   const requestLocationAndSearch = useCallback(() => {
+    if (coords) {
+      setSearched(true);
+      runSearch(coords);
+      return;
+    }
+
     if (!navigator.geolocation) {
-      alert("Tvoj brskalnik ne podpira zaznave lokacije.");
+      setShowManualLocation(true);
       setStatus("error");
       return;
     }
@@ -699,18 +794,18 @@ export default function Home() {
           lng: position.coords.longitude,
         };
         setCoords(nextCoords);
+        setShowManualLocation(false);
+        setManualLocationResults([]);
         runSearch(nextCoords);
       },
       () => {
         trackEvent("location_denied");
-        alert(
-          "Lokacije ni bilo mogoče pridobiti. Dovoli dostop do lokacije in poskusi znova.",
-        );
+        setShowManualLocation(true);
         setStatus("error");
       },
       { enableHighAccuracy: false, timeout: 7000, maximumAge: 300000 },
     );
-  }, [runSearch]);
+  }, [coords, runSearch]);
 
   useEffect(() => {
     if (!preferencesReady) return;
@@ -733,6 +828,7 @@ export default function Home() {
       mode === "ev" ? evAmountKwh : amount,
       mode === "ev" ? evConsumptionKwh100 : fuelType,
       mode === "ev" ? evMinPowerKw : brand,
+      mode === "ev" ? String(useEvSubscriptionPrices) : "",
       country,
     ].join(":");
     if (lastAutoSearchKey.current === key) return;
@@ -750,6 +846,7 @@ export default function Home() {
     evAmountKwh,
     evConsumptionKwh100,
     evMinPowerKw,
+    useEvSubscriptionPrices,
     amount,
     fuelType,
     brand,
@@ -865,9 +962,19 @@ export default function Home() {
             setEvMinPowerKw={setEvMinPowerKw}
             evConsumptionKwh100={evConsumptionKwh100}
             setEvConsumptionKwh100={setEvConsumptionKwh100}
+            useEvSubscriptionPrices={useEvSubscriptionPrices}
+            setUseEvSubscriptionPrices={setUseEvSubscriptionPrices}
             loading={loading}
             status={status}
             search={requestLocationAndSearch}
+            showManualLocation={showManualLocation}
+            setShowManualLocation={setShowManualLocation}
+            manualLocationQuery={manualLocationQuery}
+            manualLocationResults={manualLocationResults}
+            manualLocationLoading={manualLocationLoading}
+            manualLocationError={manualLocationError}
+            searchManualLocation={searchManualLocation}
+            selectManualLocation={selectManualLocation}
             includeFuel={includeFuel}
             setIncludeFuel={setIncludeFuel}
             includePath={includePath}
@@ -933,9 +1040,19 @@ function HeroSearch({
   setEvMinPowerKw,
   evConsumptionKwh100,
   setEvConsumptionKwh100,
+  useEvSubscriptionPrices,
+  setUseEvSubscriptionPrices,
   loading,
   status,
   search,
+  showManualLocation,
+  setShowManualLocation,
+  manualLocationQuery,
+  manualLocationResults,
+  manualLocationLoading,
+  manualLocationError,
+  searchManualLocation,
+  selectManualLocation,
   includeFuel,
   setIncludeFuel,
   includePath,
@@ -943,6 +1060,8 @@ function HeroSearch({
   includeTime,
   setIncludeTime,
 }: any) {
+  const [showEvAdvanced, setShowEvAdvanced] = useState(false);
+
   return (
     <div className="w-full min-w-0 max-w-full overflow-hidden rounded-[30px] border border-white/10 bg-white/[0.055] p-4 shadow-[0_25px_80px_rgba(0,0,0,.25)] backdrop-blur-2xl sm:p-6 lg:min-h-[720px] lg:p-8">
       <div className="flex items-center justify-between gap-4">
@@ -968,6 +1087,88 @@ function HeroSearch({
         Zdaj podpira goriva in EV polnilnice — z realno potjo, časom in oceno
         skupnega stroška.
       </p>
+
+      <div className="mt-4">
+        <button
+          type="button"
+          onClick={() => setShowManualLocation((v: boolean) => !v)}
+          className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.045] px-4 py-2 text-sm font-black text-white/70 transition hover:border-[#b9fb6a]/30 hover:text-white"
+        >
+          <span>⌖</span>
+          <span>
+            {showManualLocation ? "Skrij ročni vnos" : "Vnesi lokacijo ročno"}
+          </span>
+        </button>
+
+        {showManualLocation && (
+          <div className="mt-3 rounded-[22px] border border-white/10 bg-[#071a12]/62 p-3">
+            <label className="block text-xs font-black text-white/45">
+              Lokacija za iskanje
+            </label>
+            <div className="mt-2 flex gap-2">
+              <input
+                type="text"
+                value={manualLocationQuery}
+                onChange={(e) => searchManualLocation(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && manualLocationResults[0]) {
+                    selectManualLocation(manualLocationResults[0]);
+                  }
+                }}
+                placeholder="Npr. Ljubljana, Koper, Zagreb ..."
+                className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm font-bold text-white outline-none placeholder:text-white/30 focus:border-[#b9fb6a]/45"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (manualLocationResults[0]) {
+                    selectManualLocation(manualLocationResults[0]);
+                  } else {
+                    searchManualLocation(manualLocationQuery);
+                  }
+                }}
+                className="rounded-2xl bg-[#b9fb6a] px-4 py-3 text-sm font-black text-[#071a12]"
+              >
+                Uporabi
+              </button>
+            </div>
+
+            {manualLocationLoading && (
+              <div className="mt-2 text-xs font-semibold text-white/45">
+                Iščem lokacijo ...
+              </div>
+            )}
+
+            {manualLocationError && (
+              <div className="mt-2 text-xs font-semibold text-red-200/80">
+                {manualLocationError}
+              </div>
+            )}
+
+            {manualLocationResults.length > 0 && (
+              <div className="mt-3 max-h-56 overflow-auto rounded-2xl border border-white/10 bg-black/30">
+                {manualLocationResults.map(
+                  (item: GeocodeResult, index: number) => (
+                    <button
+                      key={`${item.lat}-${item.lng}-${index}`}
+                      type="button"
+                      onClick={() => selectManualLocation(item)}
+                      className="block w-full border-b border-white/5 px-4 py-3 text-left text-sm font-semibold leading-relaxed text-white/72 transition last:border-b-0 hover:bg-white/[0.06] hover:text-white"
+                    >
+                      {item.label}
+                    </button>
+                  ),
+                )}
+              </div>
+            )}
+
+            <div className="mt-2 text-[11px] leading-relaxed text-white/35">
+              Uporabno, če imaš sledenje lokacije izklopljeno. Iskanje bo
+              uporabljalo izbrano lokacijo namesto GPS-a.
+            </div>
+          </div>
+        )}
+      </div>
 
       <ModeSwitch mode={mode} setMode={setMode} />
 
@@ -1016,6 +1217,7 @@ function HeroSearch({
                 value={evChargingMode}
                 onChange={setEvChargingMode}
               />
+
               <SelectDark
                 label="Radius"
                 value={String(radius)}
@@ -1029,39 +1231,72 @@ function HeroSearch({
                   ["200", "200 km"],
                 ]}
               />
-              <NumberDark
-                label="Količina polnjenja"
-                suffix="kWh"
-                value={evAmountKwh}
-                onChange={setEvAmountKwh}
-              />
-              <SelectDark
-                label="Min. moč"
-                value={String(evMinPowerKw)}
-                onChange={(v) => setEvMinPowerKw(Number(v))}
-                options={[
-                  ["0", "Vse moči"],
-                  ["30", "30 kW+"],
-                  ["50", "50 kW+"],
-                  ["100", "100 kW+"],
-                  ["150", "150 kW+"],
-                ]}
-              />
-              <NumberDark
-                label="Poraba vozila"
-                suffix="kWh/100 km"
-                value={evConsumptionKwh100}
-                onChange={setEvConsumptionKwh100}
+
+              <button
+                type="button"
+                onClick={() => setShowEvAdvanced((v) => !v)}
+                className="sm:col-span-2 flex h-[52px] items-center justify-between rounded-2xl border border-white/10 bg-[#071a12]/55 px-4 text-left text-sm font-black text-white/80 transition hover:border-[#b9fb6a]/35"
+              >
+                <span>Napredne nastavitve</span>
+                <span className="text-lg text-[#b9fb6a]">
+                  {showEvAdvanced ? "−" : "+"}
+                </span>
+              </button>
+
+              {showEvAdvanced && (
+                <div className="sm:col-span-2 grid grid-cols-1 gap-4 rounded-2xl border border-white/10 bg-black/15 p-3 sm:grid-cols-2">
+                  <NumberDark
+                    label="Količina polnjenja"
+                    suffix="kWh"
+                    value={evAmountKwh}
+                    onChange={setEvAmountKwh}
+                  />
+
+                  <NumberDark
+                    label="Poraba vozila"
+                    suffix="kWh/100 km"
+                    value={evConsumptionKwh100}
+                    onChange={setEvConsumptionKwh100}
+                  />
+
+                  <SelectDark
+                    label={evChargingMode === "AC" ? "AC moč" : "Min. moč"}
+                    value={String(evMinPowerKw)}
+                    onChange={(v) => setEvMinPowerKw(Number(v))}
+                    options={
+                      evChargingMode === "AC"
+                        ? [
+                            ["0", "Vse AC"],
+                            ["11", "Do 11 kW"],
+                            ["22", "22 kW+"],
+                          ]
+                        : [
+                            ["0", "Vse moči"],
+                            ["30", "30 kW+"],
+                            ["50", "50 kW+"],
+                            ["100", "100 kW+"],
+                            ["150", "150 kW+"],
+                          ]
+                    }
+                  />
+
+                  {mode === "fuel" && (
+                    <SelectDark
+                      label="Država"
+                      value={country}
+                      onChange={setCountry}
+                      options={COUNTRY_OPTIONS}
+                    />
+                  )}
+                </div>
+              )}
+
+              <EvSubscriptionToggle
+                checked={useEvSubscriptionPrices}
+                onChange={setUseEvSubscriptionPrices}
               />
             </>
           )}
-
-          <SelectDark
-            label="Država"
-            value={country}
-            onChange={setCountry}
-            options={COUNTRY_OPTIONS}
-          />
 
           <button
             onClick={search}
@@ -1104,7 +1339,8 @@ function HeroSearch({
 
       <p className="mt-3 text-[11px] leading-relaxed text-white/35">
         Nastavitve si zapomnimo na tej napravi. EV cene so označene kot
-        preverjene ali ocenjene glede na vir podatkov.
+        preverjene ali ocenjene glede na vir podatkov. Cene s paketom so
+        označene z zvezdico in se uporabijo samo, če paket obkljukaš.
       </p>
     </div>
   );
@@ -1207,7 +1443,7 @@ function ResultPanel({
               <div className="mt-5 flex w-full min-w-0 items-center justify-between gap-3 overflow-hidden">
                 <h2 className="min-w-0 truncate text-[24px] font-black leading-tight tracking-[-0.04em] text-white sm:text-2xl">
                   {mode === "ev"
-                    ? "Druge EV možnosti"
+                    ? "Več EV polnilnic"
                     : "Druge odlične možnosti"}
                 </h2>
                 {lastUpdated && (
@@ -1248,11 +1484,15 @@ function ResultPanel({
                   ? "Računam dodatne možnosti ..."
                   : !showOthers
                     ? mode === "ev"
-                      ? "Prikaži druge EV možnosti"
+                      ? "Prikaži več EV polnilnic"
                       : "Prikaži druge odlične možnosti"
                     : hasMore
-                      ? "Naloži še 5 možnosti"
-                      : "Prikazane so vse izračunane možnosti"}
+                      ? mode === "ev"
+                        ? "Naloži več EV polnilnic"
+                        : "Naloži še 5 možnosti"
+                      : mode === "ev"
+                        ? "Prikazane so vse izračunane EV polnilnice"
+                        : "Prikazane so vse izračunane možnosti"}
               </button>
             </>
           )}
@@ -1277,6 +1517,46 @@ function EvNotice({
           : "EV cene: referenčna ocena"}
       </div>
       <div className="mt-1 text-white/62">{text}</div>
+    </div>
+  );
+}
+
+function EvTariffChips({ item }: { item: Result }) {
+  const activeTariff = item.applied_tariff_name
+    ? {
+        name: item.applied_tariff_name,
+        price: Number(item.applied_tariff_price || item.price),
+        active: true,
+      }
+    : null;
+
+  const passive = (item.subscription_tariffs || [])
+    .filter((tariff) => tariff.id !== item.applied_tariff_id)
+    .slice(0, 2)
+    .map((tariff) => ({
+      name: tariff.name,
+      price: tariff.price,
+      active: false,
+    }));
+
+  const chips = activeTariff ? [activeTariff, ...passive] : passive;
+  if (!chips.length) return null;
+
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {chips.map((chip) => (
+        <span
+          key={`${chip.name}-${chip.price}`}
+          className={`rounded-full px-2 py-1 text-[10px] font-black ${
+            chip.active
+              ? "bg-[#b9fb6a] text-[#071a12]"
+              : "bg-[#b9fb6a]/12 text-[#b9fb6a]"
+          }`}
+          title="Cena velja samo za uporabnike izbranega paketa."
+        >
+          {chip.price.toFixed(2)} €/kWh* · {chip.name}
+        </span>
+      ))}
     </div>
   );
 }
@@ -1359,6 +1639,8 @@ function BestCard({
                       Vir: {item.price_source_name}
                     </div>
                   )}
+
+                  <EvTariffChips item={item} />
                 </>
               )}
             </div>
@@ -1501,6 +1783,7 @@ function CompactResult({
                 </span>
               </div>
             )}
+            {ev && <EvTariffChips item={item} />}
           </div>
         </div>
         <div className="w-[76px] shrink-0 text-right sm:w-[92px]">
@@ -1828,6 +2111,50 @@ function EvChargeSwitch({
           🔌 AC
         </button>
       </div>
+    </div>
+  );
+}
+
+function EvSubscriptionToggle({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <div className="sm:col-span-2">
+      <button
+        type="button"
+        onClick={() => onChange(!checked)}
+        className={`flex w-full items-center justify-between gap-4 rounded-2xl border px-4 py-3 text-left transition ${
+          checked
+            ? "border-[#b9fb6a]/60 bg-[#b9fb6a]/14"
+            : "border-white/10 bg-[#071a12] hover:border-white/18"
+        }`}
+      >
+        <div className="min-w-0">
+          <div className="text-xs font-black text-white sm:text-sm">
+            Imam EV paket / aplikacijo za ugodnejšo tarifo
+          </div>
+          <div className="mt-1 text-[11px] font-semibold leading-relaxed text-white/45">
+            Upoštevamo nižje cene z zvezdico samo pri ujemajočih se ponudnikih.
+          </div>
+        </div>
+        <span
+          className={`relative h-7 w-12 shrink-0 rounded-full border transition ${
+            checked
+              ? "border-[#b9fb6a] bg-[#b9fb6a]"
+              : "border-white/18 bg-white/8"
+          }`}
+        >
+          <span
+            className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition ${
+              checked ? "left-6" : "left-1"
+            }`}
+          />
+        </span>
+      </button>
     </div>
   );
 }
