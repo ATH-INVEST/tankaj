@@ -74,12 +74,17 @@ export async function GET(req: NextRequest) {
   const startedAt = new Date().toISOString();
 
   const results = await Promise.all([
-    callIngest(origin, "/api/ingest/slovenia", req),
-    callIngest(origin, "/api/ingest/croatia", req),
-    callIngest(origin, "/api/ingest/italy", req),
-    callIngest(origin, "/api/ingest/ev", req),
-    callIngest(origin, "/api/ingest/ev-prices", req),
-  ]);
+  callIngest(origin, "/api/ingest/slovenia", req),
+  callIngest(origin, "/api/ingest/croatia", req),
+  callIngest(origin, "/api/ingest/italy", req),
+  callIngest(origin, "/api/ingest/austria", req),
+  callIngest(origin, "/api/ingest/austria-prices?fuel=SUP&limit=180&offset=180", req),
+  callIngest(origin, "/api/ingest/austria-prices?fuel=DIE&limit=180&offset=180", req),
+  callIngest(origin, "/api/ingest/austria-prices?fuel=SUP&limit=180&offset=360", req),
+  callIngest(origin, "/api/ingest/austria-prices?fuel=DIE&limit=180&offset=360", req),
+  callIngest(origin, "/api/ingest/ev", req),
+  callIngest(origin, "/api/ingest/ev-prices", req),
+]);
 
   return NextResponse.json({
     success: results.every((item) => item.ok),
