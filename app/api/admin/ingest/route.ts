@@ -46,3 +46,7 @@ export async function GET(req: NextRequest) {
     { status: res.status },
   );
 }
+
+export async function POST(req: NextRequest) {
+  return GET(req);
+}
