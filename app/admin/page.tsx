@@ -148,10 +148,15 @@ export default function AdminPage() {
           {loggedIn &&
             runs.length > 0 &&
             (() => {
-              const latestStartedAt = runs[0].started_at;
-              const latestBatch = runs.filter(
-                (run) => run.started_at === latestStartedAt,
-              );
+              const latestStartedAt = new Date(runs[0].started_at).getTime();
+
+              const latestBatch = runs.filter((run) => {
+                const runStartedAt = new Date(run.started_at).getTime();
+
+                // združi vse ingest zapise, ki so se začeli v isti minuti
+                return Math.abs(runStartedAt - latestStartedAt) < 60_000;
+              });
+
               const allSuccess = latestBatch.every(
                 (run) => run.status === "success",
               );
