@@ -1,24 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isAdminRequest } from "@/lib/admin-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-function isAuthorized(req: NextRequest) {
-  if (process.env.NODE_ENV !== "production") return true;
-
-  const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) return false;
-
-  const authHeader = req.headers.get("authorization");
-  const keyParam = req.nextUrl.searchParams.get("key");
-
-  if (keyParam === cronSecret) return true;
-  return authHeader === `Bearer ${cronSecret}`;
-}
-
-export async function GET(req: NextRequest) {
-  if (!isAuthorized(req)) {
+async function triggerIngest(req: NextRequest) {
+  if (!(await isAdminRequest())) {
     return NextResponse.json(
       { success: false, error: "Unauthorized" },
       { status: 401 },
@@ -26,9 +14,21 @@ export async function GET(req: NextRequest) {
   }
 
   const cronSecret = process.env.CRON_SECRET;
-  const origin = req.nextUrl.origin;
+
+  if (!cronSecret) {
+    return NextResponse.json(
+      { success: false, error: "Missing CRON_SECRET" },
+      { status: 500 },
+    );
+  }
+
+  const origin =
+    process.env.NODE_ENV === "production"
+      ? "https://www.tankaj.si"
+      : req.nextUrl.origin;
 
   const res = await fetch(`${origin}/api/ingest/all`, {
+    method: "GET",
     headers: {
       authorization: `Bearer ${cronSecret}`,
     },
@@ -40,13 +40,17 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(
     {
       success: res.ok && Boolean(json?.success),
-      triggered: "/api/ingest/all",
+      triggered: `${origin}/api/ingest/all`,
       response: json,
     },
-    { status: res.status },
+    { status: 200 },
   );
 }
 
 export async function POST(req: NextRequest) {
-  return GET(req);
+  return triggerIngest(req);
+}
+
+export async function GET(req: NextRequest) {
+  return triggerIngest(req);
 }
