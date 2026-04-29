@@ -11,9 +11,16 @@ function isAuthorized(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
   const userAgent = req.headers.get("user-agent") || "";
 
+ 
   if (userAgent.toLowerCase().includes("vercel-cron")) return true;
-  if (!cronSecret) return false;
 
+ 
+  const url = new URL(req.url);
+  const keyParam = url.searchParams.get("key");
+  if (keyParam && cronSecret && keyParam === cronSecret) return true;
+
+ 
+  if (!cronSecret) return false;
   return authHeader === `Bearer ${cronSecret}`;
 }
 
