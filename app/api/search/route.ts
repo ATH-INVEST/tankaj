@@ -19,7 +19,7 @@ type Result = {
   distance_km: number;
   estimated_drive_minutes?: number | null;
   fuel_type: string;
-  price: number;
+  price: number | null;
   total_cost?: number | null;
   fuel_cost?: number | null;
   source?: string | null;
@@ -162,7 +162,21 @@ function getPriceQuality(
 }
 
 function withPriceQuality(row: Result): Result {
-  const price = Number(row.price);
+  const parsedPrice = Number(row.price);
+  const price =
+    Number.isFinite(parsedPrice) && parsedPrice > 0 ? parsedPrice : null;
+
+  if (price === null) {
+    return {
+      ...row,
+      price: null,
+      price_age_hours: null,
+      trusted_price: false,
+      price_warning:
+        row.price_warning ||
+        "Za to črpalko trenutno nimamo potrjene aktualne cene. Prikazana je zaradi bližine.",
+    };
+  }
 
   return {
     ...row,
@@ -198,7 +212,7 @@ type RoutedResult = Result & {
 };
 
 type AnyResult = RoutedResult & {
-  travel_fuel_cost: number;
+  travel_fuel_cost: number | null;
   time_cost: number;
   effective_total_cost: number;
   tankaj_score: number;
@@ -313,15 +327,59 @@ function hasCoords(r: Result): r is Result & { lat: number; lng: number } {
   return Number.isFinite(Number(r.lat)) && Number.isFinite(Number(r.lng));
 }
 
+function priceSortValue(price: number | null | undefined) {
+  const value = Number(price);
+  return Number.isFinite(value) && value > 0 ? value : 999;
+}
+
 function candidateScore(row: Result, amount: number) {
-  return Number(row.price) * amount + Number(row.distance_km || 999) * 0.35;
+  return (
+    priceSortValue(row.price) * amount + Number(row.distance_km || 999) * 0.35
+  );
 }
 
 function uniqueByLocation(rows: Result[]) {
   const map = new Map<string, Result>();
 
   for (const row of rows) {
-    if (!map.has(row.location_id)) map.set(row.location_id, row);
+    const lat = Number(row.lat);
+    const lng = Number(row.lng);
+    const country = String(row.country_code || "").toUpperCase();
+
+    const coordKey =
+      Number.isFinite(lat) && Number.isFinite(lng)
+        ? `${country}_${lat.toFixed(5)}_${lng.toFixed(5)}_${normalizeFuelKey(row.fuel_type)}`
+        : row.location_id;
+
+    const shouldDeduplicateByCoords =
+      country === "AT" &&
+      (row.source === "e-control.at" ||
+        row.source === "fuel_prices_cache" ||
+        row.location_id.startsWith("AT_"));
+
+    const key = shouldDeduplicateByCoords ? coordKey : row.location_id;
+
+    const existing = map.get(key);
+
+    if (!existing) {
+      map.set(key, row);
+      continue;
+    }
+
+    const existingIsLive = existing.location_id.startsWith("AT_");
+    const rowIsLive = row.location_id.startsWith("AT_");
+
+    if (rowIsLive && !existingIsLive) {
+      map.set(key, row);
+      continue;
+    }
+
+    const existingTime = new Date(existing.captured_at || 0).getTime();
+    const rowTime = new Date(row.captured_at || 0).getTime();
+
+    if (rowTime > existingTime) {
+      map.set(key, row);
+    }
   }
 
   return Array.from(map.values());
@@ -334,7 +392,9 @@ function buildInitialCandidatePool(rows: Result[], amount: number) {
 
   const cheapest = [...rows]
     .sort((a, b) => {
-      if (a.price !== b.price) return a.price - b.price;
+      const priceA = priceSortValue(a.price);
+      const priceB = priceSortValue(b.price);
+      if (priceA !== priceB) return priceA - priceB;
       return n(a.distance_km, 999) - n(b.distance_km, 999);
     })
     .slice(0, INITIAL_PER_BUCKET);
@@ -389,7 +449,9 @@ function buildMoreCandidatePool(
 ) {
   const sorted = [...rows].sort((a, b) => {
     if (sortBy === "price") {
-      if (a.price !== b.price) return a.price - b.price;
+      const priceA = priceSortValue(a.price);
+      const priceB = priceSortValue(b.price);
+      if (priceA !== priceB) return priceA - priceB;
       return n(a.distance_km, 999) - n(b.distance_km, 999);
     }
 
@@ -398,7 +460,7 @@ function buildMoreCandidatePool(
         return n(a.distance_km, 999) - n(b.distance_km, 999);
       }
 
-      return a.price - b.price;
+      return priceSortValue(a.price) - priceSortValue(b.price);
     }
 
     return candidateScore(a, amount) - candidateScore(b, amount);
@@ -477,60 +539,331 @@ async function fetchAustriaRows(
   type: string,
 ): Promise<Result[]> {
   const fuel = mapAustriaFuelType(type);
+  const capturedAt = new Date().toISOString();
 
-  const url = new URL(
-    "https://api.e-control.at/sprit/1.0/search/gas-stations/by-address",
-  );
-  url.searchParams.set("latitude", String(lat));
-  url.searchParams.set("longitude", String(lng));
-  url.searchParams.set("fuelType", fuel);
-  url.searchParams.set("includeClosed", "false");
+  const gridKm = 8;
+  const latDelta = gridKm / 111;
+  const lngDelta = gridKm / (111 * Math.cos((lat * Math.PI) / 180));
 
-  try {
-    const res = await fetch(url.toString(), {
-      headers: { accept: "application/json" },
-      cache: "no-store",
-    });
+  const points = [
+    { lat, lng },
+    { lat: lat + latDelta, lng },
+    { lat: lat - latDelta, lng },
+    { lat, lng: lng + lngDelta },
+    { lat, lng: lng - lngDelta },
+    { lat: lat + latDelta, lng: lng + lngDelta },
+    { lat: lat + latDelta, lng: lng - lngDelta },
+    { lat: lat - latDelta, lng: lng + lngDelta },
+    { lat: lat - latDelta, lng: lng - lngDelta },
+    { lat: lat + latDelta * 2, lng },
+    { lat: lat - latDelta * 2, lng },
+    { lat, lng: lng + lngDelta * 2 },
+    { lat, lng: lng - lngDelta * 2 },
+  ];
 
-    if (!res.ok) return [];
+  async function fetchPoint(point: { lat: number; lng: number }) {
+    const url = new URL(
+      "https://api.e-control.at/sprit/1.0/search/gas-stations/by-address",
+    );
 
-    const raw = (await res.json()) as AustriaStation[];
+    url.searchParams.set("latitude", String(point.lat));
+    url.searchParams.set("longitude", String(point.lng));
+    url.searchParams.set("fuelType", fuel);
+    url.searchParams.set("includeClosed", "false");
 
-    return raw
-      .map((station): Result | null => {
-        const price = getAustriaPrice(station, fuel);
+    try {
+      const res = await fetch(url.toString(), {
+        headers: {
+          accept: "application/json",
+          "user-agent": "Tankaj.si fuel price search",
+        },
+        cache: "no-store",
+      });
 
-        if (price === null) return null;
+      if (!res.ok) return [];
 
-        const stationLat = station.location?.latitude;
-        const stationLng = station.location?.longitude;
-
-        if (typeof stationLat !== "number" || typeof stationLng !== "number") {
-          return null;
-        }
-
-        return {
-          location_id: `AT_${station.id}`,
-          name: station.name,
-          brand: normalizeAustriaBrand(station.name),
-          address: station.location?.address ?? null,
-          city: station.location?.city ?? null,
-          country_code: "AT",
-          lat: stationLat,
-          lng: stationLng,
-          distance_km: round(haversineKm(lat, lng, stationLat, stationLng)),
-          estimated_drive_minutes: null,
-          fuel_type: normalizeAustriaFuelType(fuel),
-          price,
-          fuel_cost: null,
-          source: "e-control.at",
-          captured_at: new Date().toISOString(),
-        };
-      })
-      .filter((item): item is Result => item !== null);
-  } catch {
-    return [];
+      return (await res.json()) as AustriaStation[];
+    } catch {
+      return [];
+    }
   }
+
+  const responses = await Promise.all(points.map(fetchPoint));
+  const stations = responses.flat();
+  const unique = new Map<number, AustriaStation>();
+
+  for (const station of stations) {
+    if (!station?.id) continue;
+    if (!unique.has(station.id)) unique.set(station.id, station);
+  }
+
+  return Array.from(unique.values())
+    .map((station): Result | null => {
+      const price = getAustriaPrice(station, fuel);
+
+      if (price === null) return null;
+
+      const stationLat = station.location?.latitude;
+      const stationLng = station.location?.longitude;
+
+      if (typeof stationLat !== "number" || typeof stationLng !== "number") {
+        return null;
+      }
+
+      return {
+        location_id: `AT_${station.id}`,
+        name: station.name,
+        brand: normalizeAustriaBrand(station.name),
+        address: station.location?.address ?? null,
+        city: station.location?.city ?? null,
+        country_code: "AT",
+        lat: stationLat,
+        lng: stationLng,
+        distance_km: round(haversineKm(lat, lng, stationLat, stationLng)),
+        estimated_drive_minutes: null,
+        fuel_type: normalizeAustriaFuelType(fuel),
+        price,
+        fuel_cost: null,
+        source: "e-control.at",
+        captured_at: capturedAt,
+      };
+    })
+    .filter((item): item is Result => item !== null);
+}
+
+async function saveAustriaLivePrices(rows: Result[]) {
+  const pricedRows = rows.filter(
+    (row) =>
+      row.country_code === "AT" &&
+      row.source === "e-control.at" &&
+      row.location_id?.startsWith("AT_") &&
+      Number.isFinite(Number(row.price)) &&
+      row.trusted_price !== false,
+  );
+
+  if (!pricedRows.length) return;
+
+  const sourceIds = Array.from(
+    new Set(pricedRows.map((row) => row.location_id.replace("AT_", ""))),
+  );
+
+  const { data: existingLocations } = await supabase
+    .from("locations")
+    .select("id,source_id")
+    .eq("country_code", "AT")
+    .eq("source", "e-control.at")
+    .in("source_id", sourceIds);
+
+  const existingBySourceId = new Map(
+    (existingLocations || []).map((loc) => [String(loc.source_id), loc.id]),
+  );
+
+  const missingLocations = pricedRows
+    .filter(
+      (row) => !existingBySourceId.has(row.location_id.replace("AT_", "")),
+    )
+    .map((row) => ({
+      type: "fuel_station",
+      name: row.name,
+      brand: row.brand,
+      operator: row.brand,
+      address: row.address,
+      city: row.city,
+      country_code: "AT",
+      lat: row.lat,
+      lng: row.lng,
+      geo: `POINT(${row.lng} ${row.lat})`,
+      source: "e-control.at",
+      source_id: row.location_id.replace("AT_", ""),
+      is_active: true,
+      metadata: {
+        imported_from_live_search: true,
+      },
+    }));
+
+  if (missingLocations.length) {
+    await supabase.from("locations").upsert(missingLocations, {
+      onConflict: "source,source_id",
+    });
+  }
+
+  const { data: allLocations } = await supabase
+    .from("locations")
+    .select("id,source_id")
+    .eq("country_code", "AT")
+    .eq("source", "e-control.at")
+    .in("source_id", sourceIds);
+
+  const locationIdBySourceId = new Map(
+    (allLocations || []).map((loc) => [String(loc.source_id), loc.id]),
+  );
+
+  const pricePayload = pricedRows
+    .map((row) => {
+      const sourceId = row.location_id.replace("AT_", "");
+      const locationId = locationIdBySourceId.get(sourceId);
+
+      if (!locationId) return null;
+
+      return {
+        location_id: locationId,
+        fuel_type: row.fuel_type,
+        price: Number(row.price),
+        currency: "EUR",
+        source: "e-control.at",
+        source_updated_at: row.captured_at || new Date().toISOString(),
+        captured_at: row.captured_at || new Date().toISOString(),
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null);
+
+  if (!pricePayload.length) return;
+
+  await supabase.from("fuel_prices").upsert(pricePayload, {
+    onConflict: "location_id,fuel_type,source",
+  });
+}
+
+async function fetchAustriaDbRows(
+  lat: number,
+  lng: number,
+  radius: number,
+  type: string,
+): Promise<Result[]> {
+  const safeRadius = Math.min(Math.max(radius, 1), 300);
+  const latDelta = safeRadius / 111;
+  const lngDelta = safeRadius / (111 * Math.cos((lat * Math.PI) / 180));
+
+  const { data, error } = await supabase
+    .from("locations")
+    .select(
+      `
+      id,
+      name,
+      brand,
+      address,
+      city,
+      country_code,
+      lat,
+      lng,
+      source,
+      source_id,
+      fuel_prices (
+        fuel_type,
+        price,
+        captured_at
+      )
+    `,
+    )
+    .eq("country_code", "AT")
+    .gte("lat", lat - latDelta)
+    .lte("lat", lat + latDelta)
+    .gte("lng", lng - lngDelta)
+    .lte("lng", lng + lngDelta)
+    .limit(700);
+
+  if (error || !data) return [];
+
+  return data
+    .map((loc: any): Result | null => {
+      const locLat = Number(loc.lat);
+      const locLng = Number(loc.lng);
+
+      if (!Number.isFinite(locLat) || !Number.isFinite(locLng)) return null;
+
+      const distance = haversineKm(lat, lng, locLat, locLng);
+      if (distance > safeRadius) return null;
+
+      const priceRow = (loc.fuel_prices || []).find(
+        (p: any) => normalizeFuelKey(p.fuel_type) === normalizeFuelKey(type),
+      );
+
+      const price = Number(priceRow?.price);
+      if (!Number.isFinite(price) || price <= 0) return null;
+
+      return {
+        location_id:
+          loc.source === "e-control.at" && loc.source_id
+            ? `AT_${loc.source_id}`
+            : String(loc.id),
+        name: loc.name || "Bencinski servis",
+        brand: loc.brand || null,
+        address: loc.address || null,
+        city: loc.city || null,
+        country_code: "AT",
+        lat: locLat,
+        lng: locLng,
+        distance_km: round(distance),
+        estimated_drive_minutes: null,
+        fuel_type: type,
+        price,
+        fuel_cost: null,
+        source: "fuel_prices_cache",
+        captured_at: priceRow.captured_at,
+      };
+    })
+    .filter((item): item is Result => item !== null);
+}
+
+async function fetchAustriaOsmRows(
+  lat: number,
+  lng: number,
+  radius: number,
+  type: string,
+): Promise<Result[]> {
+  const safeRadius = Math.min(Math.max(radius, 1), 300);
+  const latDelta = safeRadius / 111;
+  const lngDelta = safeRadius / (111 * Math.cos((lat * Math.PI) / 180));
+
+  const { data, error } = await supabase
+    .from("locations")
+    .select(
+      "id,name,brand,address,city,country_code,lat,lng,source,source_id,updated_at,is_active",
+    )
+    .eq("country_code", "AT")
+    .eq("source", "openstreetmap_at")
+    .eq("is_active", true)
+    .gte("lat", lat - latDelta)
+    .lte("lat", lat + latDelta)
+    .gte("lng", lng - lngDelta)
+    .lte("lng", lng + lngDelta)
+    .limit(700);
+
+  if (error || !data) return [];
+
+  return data
+    .map((row): Result | null => {
+      const rowLat = Number(row.lat);
+      const rowLng = Number(row.lng);
+
+      if (!Number.isFinite(rowLat) || !Number.isFinite(rowLng)) return null;
+
+      const distance = haversineKm(lat, lng, rowLat, rowLng);
+      if (distance > safeRadius) return null;
+
+      return {
+        location_id: String(row.id),
+        name: row.name || "Bencinski servis",
+        brand: row.brand || null,
+        address: row.address || null,
+        city: row.city || null,
+        country_code: "AT",
+        lat: rowLat,
+        lng: rowLng,
+        distance_km: round(distance),
+        estimated_drive_minutes: null,
+        fuel_type: type,
+        price: null,
+        fuel_cost: null,
+        source: "openstreetmap_at",
+        captured_at: null,
+        trusted_price: false,
+        price_age_hours: null,
+        price_warning:
+          "Za to črpalko trenutno nimamo potrjene aktualne cene. Prikazana je zaradi bližine.",
+      };
+    })
+    .filter((item): item is Result => item !== null);
 }
 
 async function mapWithConcurrency<T, R>(
@@ -719,10 +1052,19 @@ function score(
           ? r.total_cost
           : null;
 
-    const fuelCost = round(existingFuelCost ?? r.price * amount);
-    const travelFuelCost = round((r.distance_km * consumption * r.price) / 100);
+    const price =
+      priceSortValue(r.price) === 999 ? null : priceSortValue(r.price);
+    const fuelCost =
+      price !== null ? round(existingFuelCost ?? price * amount) : null;
+    const travelFuelCost =
+      price !== null
+        ? round((r.distance_km * consumption * price) / 100)
+        : null;
     const timeCost = round((r.estimated_drive_minutes / 60) * timeValue);
-    const effectiveTotalCost = round(fuelCost + travelFuelCost + timeCost);
+    const effectiveTotalCost =
+      fuelCost !== null && travelFuelCost !== null
+        ? round(fuelCost + travelFuelCost + timeCost)
+        : 999999;
 
     return {
       ...r,
@@ -742,14 +1084,18 @@ function score(
 function sortResults(rows: AnyResult[], sortBy: SortBy) {
   return [...rows].sort((a, b) => {
     if (sortBy === "price") {
-      if (a.price !== b.price) return a.price - b.price;
+      const priceA = priceSortValue(a.price);
+      const priceB = priceSortValue(b.price);
+      if (priceA !== priceB) return priceA - priceB;
       if (a.distance_km !== b.distance_km) return a.distance_km - b.distance_km;
       return a.effective_total_cost - b.effective_total_cost;
     }
 
     if (sortBy === "distance") {
       if (a.distance_km !== b.distance_km) return a.distance_km - b.distance_km;
-      if (a.price !== b.price) return a.price - b.price;
+      const priceA = priceSortValue(a.price);
+      const priceB = priceSortValue(b.price);
+      if (priceA !== priceB) return priceA - priceB;
       return a.effective_total_cost - b.effective_total_cost;
     }
 
@@ -853,17 +1199,36 @@ export async function GET(req: Request) {
   const userCountry = inferUserCountry(lat, lng);
 
   const dbRows = ((data || []) as Result[])
-    .filter((r) => Number.isFinite(Number(r.price)))
     .filter(hasCoords)
     .map(withPriceQuality);
 
-  const austriaRows =
-    countryFilter === "ALL" || countryFilter === "AT"
-      ? (await fetchAustriaRows(lat, lng, type))
-          .filter((r) => Number.isFinite(Number(r.price)))
-          .filter(hasCoords)
-          .map(withPriceQuality)
-      : [];
+  const shouldUseAustria = countryFilter === "ALL" || countryFilter === "AT";
+
+  const austriaDbRows = shouldUseAustria
+    ? (await fetchAustriaDbRows(lat, lng, radius, type))
+        .filter(hasCoords)
+        .map(withPriceQuality)
+    : [];
+
+  const austriaLiveRows = shouldUseAustria
+    ? (await fetchAustriaRows(lat, lng, type))
+        .filter(hasCoords)
+        .map(withPriceQuality)
+    : [];
+
+  await saveAustriaLivePrices(austriaLiveRows);
+
+  const austriaOsmRows = shouldUseAustria
+    ? (await fetchAustriaOsmRows(lat, lng, radius, type))
+        .filter(hasCoords)
+        .map(withPriceQuality)
+    : [];
+
+  const austriaRows = uniqueByLocation([
+    ...austriaLiveRows,
+    ...austriaDbRows,
+    ...austriaOsmRows,
+  ]);
 
   let rows = uniqueByLocation([...dbRows, ...austriaRows]).map(
     withPriceQuality,
@@ -877,6 +1242,9 @@ export async function GET(req: Request) {
     rows = rows.filter((r) => countryMatches(r.country_code, countryFilter));
   }
 
+  // IMPORTANT: only stations with a fresh, realistic price may be shown.
+  // OSM locations without a confirmed fuel price are used only for future coverage/matching,
+  // not as visible results, because Tankaj.si must recommend priced stations only.
   const trustedRows = rows.filter((r) => r.trusted_price === true);
   const fallbackRows = rows.filter((r) => r.trusted_price !== true);
 
@@ -885,26 +1253,8 @@ export async function GET(req: Request) {
       ? buildMoreCandidatePool(trustedRows, amount, sortBy, offset)
       : buildInitialCandidatePool(trustedRows, amount);
 
-  const fallbackCandidateLimit = Math.max(
-    0,
-    INITIAL_CANDIDATE_LIMIT - trustedCandidatePool.length,
-  );
-
-  const fallbackCandidatePool =
-    batch === "more"
-      ? buildMoreCandidatePool(fallbackRows, amount, sortBy, offset).slice(
-          0,
-          fallbackCandidateLimit || MORE_LIMIT,
-        )
-      : buildInitialCandidatePool(fallbackRows, amount).slice(
-          0,
-          fallbackCandidateLimit,
-        );
-
-  const candidatePool = uniqueByLocation([
-    ...trustedCandidatePool,
-    ...fallbackCandidatePool,
-  ]);
+  const fallbackCandidatePool: Result[] = [];
+  const candidatePool = uniqueByLocation(trustedCandidatePool);
 
   const routed = await enrich(candidatePool, { lat, lng });
   const scored = score(routed, amount, consumption, timeValue, userCountry);
@@ -920,25 +1270,17 @@ export async function GET(req: Request) {
   const validTrusted = valid.filter((r) => r.trusted_price === true);
   const validFallback = valid.filter((r) => r.trusted_price !== true);
 
-  // Winner may only come from fresh and realistic prices.
-  // Fallback rows can still be displayed lower in "Druge odlične možnosti" with a warning.
+  // Winner and visible results may only come from fresh and realistic prices.
   const winner = pickWinner(validTrusted, sortBy, radius);
 
-  const trustedResults = sortResults(
+  const results = sortResults(
     validTrusted.filter((r) => r.distance_km <= radius),
     sortBy,
   );
 
-  const fallbackResults = sortResults(
-    validFallback.filter((r) => r.distance_km <= radius),
-    sortBy,
-  );
-
-  const results = [...trustedResults, ...fallbackResults];
-
   const nextOffset =
     batch === "more" ? offset + MORE_LIMIT : candidatePool.length;
-  const hasMore = rows.length > nextOffset;
+  const hasMore = trustedRows.length > nextOffset;
 
   return NextResponse.json({
     success: true,
@@ -951,12 +1293,16 @@ export async function GET(req: Request) {
     price_policy: {
       max_price_age_hours: MAX_PRICE_AGE_HOURS,
       winner_requires_trusted_price: true,
-      fallback_results_are_display_only: true,
+      visible_results_require_trusted_price: true,
+      fallback_results_are_display_only: false,
     },
     counts: {
       all_considered_count: rows.length,
       db_count: dbRows.length,
       austria_count: austriaRows.length,
+      austria_db_count: austriaDbRows.length,
+      austria_live_count: austriaLiveRows.length,
+      austria_osm_count: austriaOsmRows.length,
       trusted_rows_count: trustedRows.length,
       fallback_rows_count: fallbackRows.length,
       candidate_pool_count: candidatePool.length,

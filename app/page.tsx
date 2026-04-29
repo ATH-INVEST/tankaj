@@ -20,16 +20,19 @@ type Result = {
   distance_km: number;
   estimated_drive_minutes: number;
   fuel_type: string;
-  price: number;
+  price: number | null;
   price_unit?: string | null;
-  fuel_cost: number;
-  travel_fuel_cost: number;
-  time_cost: number;
-  effective_total_cost: number;
+  fuel_cost: number | null;
+  travel_fuel_cost: number | null;
+  time_cost: number | null;
+  effective_total_cost: number | null;
   tankaj_score?: number;
   is_cross_border?: boolean;
   route_source?: string;
   captured_at?: string;
+  price_age_hours?: number | null;
+  trusted_price?: boolean;
+  price_warning?: string | null;
   recommendation_reason?: string | null;
   max_power_kw?: number | null;
   connector_types?: string[] | null;
@@ -103,7 +106,27 @@ const COUNTRY_OPTIONS = [
 ];
 
 function formatMoney(value?: number | null) {
-  return `${Number(value || 0).toFixed(2)} €`;
+  if (!Number.isFinite(Number(value))) return "—";
+  return `${Number(value).toFixed(2)} €`;
+}
+
+function hasUsablePrice(item?: Pick<Result, "price"> | null) {
+  return Number.isFinite(Number(item?.price)) && Number(item?.price) > 0;
+}
+
+function formatUnitPrice(
+  item: Pick<Result, "price" | "price_unit" | "fuel_type">,
+) {
+  if (!hasUsablePrice(item)) return "Cena ni na voljo";
+  return `${Number(item.price).toFixed(isEv(item) ? 2 : 3)} ${unitLabel(item)}`;
+}
+
+function hasCost(value?: number | null) {
+  return Number.isFinite(Number(value)) && Number(value) < 999999;
+}
+
+function formatCost(value?: number | null) {
+  return hasCost(value) ? formatMoney(value) : "—";
 }
 
 function formatKm(value?: number | null) {
@@ -251,9 +274,13 @@ function scoreItem(
   includePath: boolean,
   includeTime: boolean,
 ) {
-  const fuel = includeFuel ? Number(item.fuel_cost || 0) : 0;
-  const path = includePath ? Number(item.travel_fuel_cost || 0) : 0;
-  const time = includeTime ? Number(item.time_cost || 0) : 0;
+  if (includeFuel && !hasCost(item.fuel_cost)) return 999999;
+  if (includePath && !hasCost(item.travel_fuel_cost)) return 999999;
+
+  const fuel = includeFuel ? Number(item.fuel_cost) : 0;
+  const path = includePath ? Number(item.travel_fuel_cost) : 0;
+  const time =
+    includeTime && hasCost(item.time_cost) ? Number(item.time_cost) : 0;
 
   return Number((fuel + path + time).toFixed(2));
 }
@@ -269,15 +296,18 @@ function sortClientResults(
     const aScore = scoreItem(a, includeFuel, includePath, includeTime);
     const bScore = scoreItem(b, includeFuel, includePath, includeTime);
 
+    const aPrice = hasUsablePrice(a) ? Number(a.price) : 999;
+    const bPrice = hasUsablePrice(b) ? Number(b.price) : 999;
+
     if (sortBy === "price") {
-      if (a.price !== b.price) return a.price - b.price;
+      if (aPrice !== bPrice) return aPrice - bPrice;
       if (a.distance_km !== b.distance_km) return a.distance_km - b.distance_km;
       return aScore - bScore;
     }
 
     if (sortBy === "distance") {
       if (a.distance_km !== b.distance_km) return a.distance_km - b.distance_km;
-      if (a.price !== b.price) return a.price - b.price;
+      if (aPrice !== bPrice) return aPrice - bPrice;
       return aScore - bScore;
     }
 
@@ -636,28 +666,25 @@ export default function Home() {
     ],
   );
 
-  const applySearchResponse = useCallback(
-    (json: any, append = false) => {
-      const incoming = (json.results || []) as Result[];
-      setPricingMode(json.pricing_mode || null);
-      setDisclaimer(json.disclaimer || null);
-      setNextOffset(json.next_offset || (append ? nextOffset + 5 : 6));
-      setHasMore(Boolean(json.has_more));
+  const applySearchResponse = useCallback((json: any, append = false) => {
+    const incoming = (json.results || []) as Result[];
+    setPricingMode(json.pricing_mode || null);
+    setDisclaimer(json.disclaimer || null);
+    setNextOffset(json.next_offset ?? 0);
+    setHasMore(Boolean(json.has_more));
 
-      if (!append) {
-        setResults(incoming);
-        return;
-      }
+    if (!append) {
+      setResults(incoming);
+      return;
+    }
 
-      setResults((prev) => {
-        const map = new Map<string, Result>();
-        for (const item of prev) map.set(item.location_id, item);
-        for (const item of incoming) map.set(item.location_id, item);
-        return Array.from(map.values());
-      });
-    },
-    [nextOffset],
-  );
+    setResults((prev) => {
+      const map = new Map<string, Result>();
+      for (const item of prev) map.set(item.location_id, item);
+      for (const item of incoming) map.set(item.location_id, item);
+      return Array.from(map.values());
+    });
+  }, []);
 
   const runSearch = useCallback(
     async (point: { lat: number; lng: number }) => {
@@ -1525,7 +1552,7 @@ function EvTariffChips({ item }: { item: Result }) {
   const activeTariff = item.applied_tariff_name
     ? {
         name: item.applied_tariff_name,
-        price: Number(item.applied_tariff_price || item.price),
+        price: Number(item.applied_tariff_price ?? item.price ?? 0),
         active: true,
       }
     : null;
@@ -1573,8 +1600,6 @@ function BestCard({
 }: any) {
   const displayTotal = scoreItem(item, includeFuel, includePath, includeTime);
   const ev = isEv(item);
-  const unit = unitLabel(item);
-
   return (
     <div className="w-full min-w-0 max-w-full overflow-hidden rounded-[28px] border border-[#b9fb6a]/35 bg-[#071a12]/65 p-4 shadow-[0_18px_60px_rgba(0,0,0,.24)] sm:p-5">
       <div className="flex min-w-0 items-start justify-between gap-3">
@@ -1613,8 +1638,13 @@ function BestCard({
                 {ev ? "Cena polnjenja" : "Cena goriva"}
               </div>
               <div className="truncate text-2xl font-black text-[#b9fb6a] sm:text-3xl">
-                {item.price.toFixed(3)} {unit}
+                {formatUnitPrice(item)}
               </div>
+              {!hasUsablePrice(item) && item.price_warning && (
+                <div className="mt-2 max-w-[260px] text-[11px] font-semibold leading-snug text-white/45">
+                  {item.price_warning}
+                </div>
+              )}
               {ev && (
                 <>
                   <div className="mt-2 flex flex-wrap gap-1.5">
@@ -1657,17 +1687,17 @@ function BestCard({
         <div className="mt-4 grid min-w-0 grid-cols-3 gap-2 [&>*]:min-w-0">
           <CostPill
             label={ev ? "Energija" : "Gorivo"}
-            value={includeFuel ? formatMoney(item.fuel_cost) : "—"}
+            value={includeFuel ? formatCost(item.fuel_cost) : "—"}
             active={includeFuel}
           />
           <CostPill
             label="Pot"
-            value={includePath ? formatMoney(item.travel_fuel_cost) : "—"}
+            value={includePath ? formatCost(item.travel_fuel_cost) : "—"}
             active={includePath}
           />
           <CostPill
             label="Čas"
-            value={includeTime ? formatMoney(item.time_cost) : "—"}
+            value={includeTime ? formatCost(item.time_cost) : "—"}
             active={includeTime}
           />
         </div>
@@ -1677,7 +1707,7 @@ function BestCard({
             Ocenjen skupni strošek
           </div>
           <div className="mt-1 text-3xl font-black text-[#b9fb6a]">
-            {formatMoney(displayTotal)}
+            {displayTotal < 999999 ? formatMoney(displayTotal) : "—"}
           </div>
         </div>
       </div>
@@ -1740,8 +1770,6 @@ function CompactResult({
 }) {
   const displayTotal = scoreItem(item, includeFuel, includePath, includeTime);
   const ev = isEv(item);
-  const unit = unitLabel(item);
-
   return (
     <a
       href={mapsUrl(item)}
@@ -1771,8 +1799,13 @@ function CompactResult({
               {countryLabel(item.country_code)} · {item.address}
             </div>
             <div className="mt-2 text-[22px] font-black leading-none tracking-[-0.04em] text-[#b9fb6a] sm:text-2xl">
-              {item.price.toFixed(3)} {unit}
+              {formatUnitPrice(item)}
             </div>
+            {!hasUsablePrice(item) && item.price_warning && (
+              <div className="mt-1 line-clamp-2 text-[11px] font-semibold leading-snug text-white/38">
+                {item.price_warning}
+              </div>
+            )}
             {ev && (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-black text-white/55">
@@ -1795,7 +1828,7 @@ function CompactResult({
           </div>
           <div className="mt-1 text-[10px] text-white/40">skupaj</div>
           <div className="text-[16px] font-black leading-tight text-[#b9fb6a] sm:text-lg">
-            {formatMoney(displayTotal)}
+            {displayTotal < 999999 ? formatMoney(displayTotal) : "—"}
           </div>
         </div>
       </div>
