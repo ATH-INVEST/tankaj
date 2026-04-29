@@ -210,7 +210,9 @@ export async function GET(req: NextRequest) {
     });
 
     for (const batch of chunk(pricePayloads, BATCH_SIZE)) {
-      const { error } = await supabase.from("fuel_prices").insert(batch);
+      const { error } = await supabase.from("fuel_prices").upsert(batch, {
+        onConflict: "location_id,fuel_type,source",
+      });
 
       if (error) throw error;
     }
