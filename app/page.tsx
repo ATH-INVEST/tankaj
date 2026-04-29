@@ -29,6 +29,7 @@ type Result = {
   tankaj_score?: number;
   is_cross_border?: boolean;
   route_source?: string;
+  source?: string | null;
   captured_at?: string;
   price_age_hours?: number | null;
   trusted_price?: boolean;
@@ -141,6 +142,22 @@ function normalize(value?: string | null) {
     .toUpperCase();
 }
 
+const PREMIUM_BRAND_PRIORITY = [
+  "OMV",
+  "SHELL",
+  "ENI",
+  "AGIP",
+  "BP",
+  "HOFER",
+  "DISKONT",
+  "AVIA",
+  "JET",
+  "TURMÖL",
+  "TURMOEL",
+  "GENOL",
+  "LAGERHAUS",
+];
+
 function isEv(item?: Pick<Result, "fuel_type"> | null) {
   return Boolean(item && normalize(item.fuel_type).startsWith("EV_"));
 }
@@ -155,11 +172,69 @@ function countryLabel(code?: string | null) {
   return code ? code.toUpperCase() : "—";
 }
 
+function normalizeFuelForMerge(value?: string | null) {
+  return String(value || "")
+    .trim()
+    .toUpperCase();
+}
+
+function resultMergeKey(item: Result) {
+  const lat = Number(item.lat);
+  const lng = Number(item.lng);
+  const country = normalize(item.country_code);
+  const fuel = normalizeFuelForMerge(item.fuel_type);
+
+  if (
+    country === "AT" &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    (item.source === "e-control.at" ||
+      item.source === "fuel_prices_cache" ||
+      item.location_id.startsWith("AT_"))
+  ) {
+    return `${country}_${lat.toFixed(5)}_${lng.toFixed(5)}_${fuel}`;
+  }
+
+  return item.location_id;
+}
+
+function mergeUniqueResults(existing: Result[], incoming: Result[]) {
+  const map = new Map<string, Result>();
+
+  for (const item of existing) {
+    map.set(resultMergeKey(item), item);
+  }
+
+  for (const item of incoming) {
+    const key = resultMergeKey(item);
+    const previous = map.get(key);
+
+    if (!previous) {
+      map.set(key, item);
+      continue;
+    }
+
+    const previousTime = new Date(previous.captured_at || 0).getTime();
+    const itemTime = new Date(item.captured_at || 0).getTime();
+
+    if (itemTime >= previousTime) {
+      map.set(key, item);
+    }
+  }
+
+  return Array.from(map.values());
+}
+
 function brandShort(brand?: string | null) {
   const b = normalize(brand);
   if (!b || b.includes("UNKNOWN")) return "EV";
   if (b.includes("PETROL")) return "P";
   if (b.includes("SHELL")) return "SH";
+  if (b.includes("BP")) return "BP";
+  if (b.includes("HOFER")) return "HOF";
+  if (b.includes("DISKONT")) return "DIS";
+  if (b.includes("GENOL")) return "GEN";
+  if (b.includes("LAGERHAUS")) return "LAG";
   if (b.includes("MOL")) return "MOL";
   if (b.includes("INA")) return "INA";
   if (b.includes("TIFON")) return "TF";
@@ -182,6 +257,11 @@ function brandColor(brand?: string | null) {
   if (b.includes("MOL")) return "bg-[#c8192e] text-white";
   if (b.includes("SHELL")) return "bg-[#ffd84d] text-[#7a1600]";
   if (b.includes("OMV")) return "bg-white text-[#007a5e]";
+  if (b.includes("BP")) return "bg-[#009fdf] text-white";
+  if (b.includes("HOFER") || b.includes("DISKONT"))
+    return "bg-[#ffd84d] text-[#071a12]";
+  if (b.includes("GENOL") || b.includes("LAGERHAUS"))
+    return "bg-white/90 text-[#0b1f16]";
   if (b.includes("INA")) return "bg-[#0067b1] text-white";
   if (b.includes("TIFON")) return "bg-[#1f4bff] text-white";
   if (b.includes("ENI") || b.includes("AGIP"))
@@ -200,6 +280,11 @@ function inferBrandKey(item: Pick<Result, "brand" | "name">) {
     "MOL",
     "SHELL",
     "OMV",
+    "BP",
+    "HOFER",
+    "DISKONT",
+    "GENOL",
+    "LAGERHAUS",
     "TURMÖL",
     "TURMOEL",
     "JET",
@@ -223,12 +308,27 @@ function inferBrandKey(item: Pick<Result, "brand" | "name">) {
   return match;
 }
 
+function premiumBrandRank(item: Pick<Result, "brand" | "name">) {
+  const key = inferBrandKey(item);
+  const rank = PREMIUM_BRAND_PRIORITY.indexOf(key);
+  return rank >= 0 ? rank : 999;
+}
+
+function isPremiumBrand(item: Pick<Result, "brand" | "name">) {
+  return premiumBrandRank(item) < 999;
+}
+
 function brandLabel(value: string) {
   const labels: Record<string, string> = {
     PETROL: "Petrol",
     MOL: "MOL",
     SHELL: "Shell",
     OMV: "OMV",
+    BP: "BP",
+    HOFER: "Hofer/Diskont",
+    DISKONT: "Hofer/Diskont",
+    GENOL: "Genol",
+    LAGERHAUS: "Lagerhaus",
     TURMÖL: "Turmöl",
     TURMOEL: "Turmöl",
     JET: "JET",
@@ -249,17 +349,61 @@ function brandLabel(value: string) {
   return labels[normalize(value)] || value;
 }
 
-function stationBrandMatches(item: Result, selectedBrand: string) {
+function parseBrandSelection(value?: string | null) {
+  const raw = String(value || "ALL").trim();
+  if (!raw || normalize(raw) === "ALL") return [];
+
+  return raw
+    .split(",")
+    .map((item) => normalize(item))
+    .filter(Boolean)
+    .filter((item) => item !== "ALL");
+}
+
+function formatBrandSelection(value?: string | null) {
+  const selected = parseBrandSelection(value);
+  if (!selected.length) return "Vse znamke";
+  if (selected.length === 1) return brandLabel(selected[0]);
+  if (selected.length <= 3) return selected.map(brandLabel).join(", ");
+  return `${selected.length} znamke`;
+}
+
+function brandValueMatches(item: Result, selectedBrand: string) {
   const selected = normalize(selectedBrand);
   if (!selected || selected === "ALL") return true;
+
   const brand = normalize(item.brand);
   const name = normalize(item.name);
+  const address = normalize(item.address);
+  const inferred = inferBrandKey(item);
+  const source = `${brand} ${name} ${address} ${inferred}`;
+
+  if (selected === "HOFER") {
+    return source.includes("HOFER") || source.includes("DISKONT");
+  }
+
+  if (selected === "DISKONT") {
+    return source.includes("DISKONT") || source.includes("HOFER");
+  }
+
+  if (selected === "TURMOEL") {
+    return source.includes("TURMÖL") || source.includes("TURMOEL");
+  }
+
   return Boolean(
     brand === selected ||
+    inferred === selected ||
     brand.includes(selected) ||
     selected.includes(brand) ||
-    name.includes(selected),
+    name.includes(selected) ||
+    address.includes(selected),
   );
+}
+
+function stationBrandMatches(item: Result, selectedBrand: string) {
+  const selected = parseBrandSelection(selectedBrand);
+  if (!selected.length) return true;
+  return selected.some((brand) => brandValueMatches(item, brand));
 }
 
 function powerBadge(item: Result) {
@@ -418,6 +562,7 @@ export default function Home() {
     null,
   );
   const [results, setResults] = useState<Result[]>([]);
+  const resultsRef = useRef<Result[]>([]);
   const [status, setStatus] = useState<SearchStatus>("idle");
   const [searched, setSearched] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
@@ -522,10 +667,40 @@ export default function Home() {
     useEvSubscriptionPrices,
   ]);
 
+  useEffect(() => {
+    resultsRef.current = results;
+  }, [results]);
+
   const brandOptions = useMemo(() => {
-    if (!results.length)
-      return [["ALL", mode === "ev" ? "Vsi ponudniki" : "Vse znamke"]];
     const available = new Map<string, string>();
+
+    const defaultFuelBrands = [
+      "PETROL",
+      "MOL",
+      "OMV",
+      "SHELL",
+      "HOFER",
+      "BP",
+      "ENI",
+      "JET",
+      "AVIA",
+      "TURMÖL",
+      "GENOL",
+      "INA",
+      "TIFON",
+      "CRODUX",
+      "Q8",
+      "IP",
+      "TAMOIL",
+      "ESSO",
+      "TOTALENERGIES",
+    ];
+
+    const defaultEvBrands = ["TESLA", "PETROL", "LIDL", "MOL", "IONITY"];
+
+    for (const key of mode === "ev" ? defaultEvBrands : defaultFuelBrands) {
+      available.set(key, brandLabel(key));
+    }
 
     for (const item of results) {
       const key = inferBrandKey(item);
@@ -542,9 +717,20 @@ export default function Home() {
   }, [results, mode]);
 
   useEffect(() => {
-    if (brand === "ALL") return;
-    if (brandOptions.some(([value]) => value === brand)) return;
-    setBrand("ALL");
+    const selected = parseBrandSelection(brand);
+    if (!selected.length) return;
+
+    const allowed = new Set(brandOptions.map(([value]) => normalize(value)));
+    const kept = selected.filter((value) => allowed.has(value));
+
+    if (!kept.length) {
+      setBrand("ALL");
+      return;
+    }
+
+    if (kept.length !== selected.length) {
+      setBrand(kept.join(","));
+    }
   }, [brand, brandOptions]);
 
   const filteredResults = useMemo(() => {
@@ -567,8 +753,10 @@ export default function Home() {
     const unique = new Map<string, Result>();
     for (const item of sortedResults) {
       if (best?.location_id === item.location_id) continue;
-      if (!unique.has(item.location_id)) unique.set(item.location_id, item);
+      const key = resultMergeKey(item);
+      if (!unique.has(key)) unique.set(key, item);
     }
+
     return Array.from(unique.values());
   }, [sortedResults, best]);
 
@@ -647,6 +835,7 @@ export default function Home() {
       } else {
         params.set("type", fuelType);
         params.set("mode", "nearby");
+        if (parseBrandSelection(brand).length) params.set("brand", brand);
       }
 
       return params;
@@ -668,21 +857,28 @@ export default function Home() {
 
   const applySearchResponse = useCallback((json: any, append = false) => {
     const incoming = (json.results || []) as Result[];
+    const next = Number(json.next_offset);
+
     setPricingMode(json.pricing_mode || null);
     setDisclaimer(json.disclaimer || null);
-    setNextOffset(json.next_offset ?? 0);
-    setHasMore(Boolean(json.has_more));
+    setNextOffset(Number.isFinite(next) ? next : 0);
+    setHasMore(Boolean(json.has_more) && incoming.length > 0);
 
     if (!append) {
       setResults(incoming);
+      resultsRef.current = incoming;
       return;
     }
 
     setResults((prev) => {
-      const map = new Map<string, Result>();
-      for (const item of prev) map.set(item.location_id, item);
-      for (const item of incoming) map.set(item.location_id, item);
-      return Array.from(map.values());
+      const merged = mergeUniqueResults(prev, incoming);
+      resultsRef.current = merged;
+
+      if (merged.length === prev.length && !json.has_more) {
+        setHasMore(false);
+      }
+
+      return merged;
     });
   }, []);
 
@@ -885,18 +1081,55 @@ export default function Home() {
     if (!coords || loadingMore || !hasMore) return;
     setLoadingMore(true);
 
+    const endpoint = mode === "ev" ? "/api/search/ev" : "/api/search";
+    const startOffset = nextOffset;
+    let offset = nextOffset;
+    let merged = resultsRef.current;
+    let addedCount = 0;
+    let receivedCount = 0;
+    let latestHasMore: boolean = hasMore;
+
     try {
-      const params = buildSearchParams(coords, "more", nextOffset);
-      const endpoint = mode === "ev" ? "/api/search/ev" : "/api/search";
-      const res = await fetch(`${endpoint}?${params.toString()}`);
-      if (!res.ok) throw new Error("Failed to load more results");
-      const json = await res.json();
-      applySearchResponse(json, true);
+      for (
+        let attempt = 0;
+        attempt < 5 && latestHasMore && addedCount < 5;
+        attempt += 1
+      ) {
+        const params = buildSearchParams(coords, "more", offset);
+        const res = await fetch(`${endpoint}?${params.toString()}`);
+
+        if (!res.ok) throw new Error("Failed to load more results");
+
+        const json = await res.json();
+        const incoming = (json.results || []) as Result[];
+        const beforeCount = merged.length;
+
+        receivedCount += incoming.length;
+        merged = mergeUniqueResults(merged, incoming);
+        addedCount += Math.max(0, merged.length - beforeCount);
+
+        const next = Number(json.next_offset);
+        offset = Number.isFinite(next) ? next : offset + incoming.length;
+        latestHasMore = Boolean(json.has_more) && incoming.length > 0;
+
+        setPricingMode(json.pricing_mode || null);
+        setDisclaimer(json.disclaimer || null);
+
+        if (!latestHasMore) break;
+      }
+
+      resultsRef.current = merged;
+      setResults(merged);
+      setNextOffset(offset);
+      setHasMore(latestHasMore && addedCount > 0);
       setShowOthers(true);
+
       trackEvent("load_more_results", {
         mode,
-        next_offset: nextOffset,
-        received_count: Number(json.results?.length || 0),
+        next_offset: startOffset,
+        new_next_offset: offset,
+        received_count: receivedCount,
+        added_count: addedCount,
         sort_by: sortBy,
         radius,
       });
@@ -1090,7 +1323,7 @@ function HeroSearch({
   const [showEvAdvanced, setShowEvAdvanced] = useState(false);
 
   return (
-    <div className="w-full min-w-0 max-w-full overflow-hidden rounded-[30px] border border-white/10 bg-white/[0.055] p-4 shadow-[0_25px_80px_rgba(0,0,0,.25)] backdrop-blur-2xl sm:p-6 lg:min-h-[720px] lg:p-8">
+    <div className="w-full min-w-0 max-w-full overflow-visible rounded-[30px] border border-white/10 bg-white/[0.055] p-4 shadow-[0_25px_80px_rgba(0,0,0,.25)] backdrop-blur-2xl sm:p-6 lg:min-h-[720px] lg:p-8">
       <div className="flex items-center justify-between gap-4">
         <div className="text-3xl font-black italic tracking-tight sm:text-4xl">
           Tankaj<span className="text-[#b9fb6a]">.si</span>
@@ -1199,7 +1432,7 @@ function HeroSearch({
 
       <ModeSwitch mode={mode} setMode={setMode} />
 
-      <div className="mt-4 w-full min-w-0 max-w-full overflow-hidden rounded-[26px] border border-white/10 bg-[#123024]/72 p-3 sm:p-4 lg:p-5">
+      <div className="mt-4 w-full min-w-0 max-w-full overflow-visible rounded-[26px] border border-white/10 bg-[#123024]/72 p-3 sm:p-4 lg:p-5">
         <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 items-end">
           {mode === "fuel" ? (
             <>
@@ -1231,8 +1464,8 @@ function HeroSearch({
                 value={amount}
                 onChange={setAmount}
               />
-              <SelectDark
-                label="Znamka"
+              <BrandMultiSelect
+                label="Znamke"
                 value={brand}
                 onChange={setBrand}
                 options={brandOptions}
@@ -2188,6 +2421,129 @@ function EvSubscriptionToggle({
           />
         </span>
       </button>
+    </div>
+  );
+}
+
+function BrandMultiSelect({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: string[][];
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = parseBrandSelection(value);
+  const selectedSet = new Set(selected);
+  const activeCount = selected.length;
+
+  function commit(next: string[]) {
+    const clean = Array.from(
+      new Set(next.map(normalize).filter(Boolean)),
+    ).filter((item) => item !== "ALL");
+
+    onChange(clean.length ? clean.join(",") : "ALL");
+  }
+
+  function toggleBrand(nextValue: string) {
+    const key = normalize(nextValue);
+
+    if (!key || key === "ALL") {
+      onChange("ALL");
+      return;
+    }
+
+    if (selectedSet.has(key)) {
+      commit(selected.filter((item) => item !== key));
+      return;
+    }
+
+    commit([...selected, key]);
+  }
+
+  return (
+    <div className="relative">
+      <span className="mb-1.5 block text-xs font-semibold text-white/50">
+        {label}
+      </span>
+
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className="flex h-[56px] w-full items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#071a12] px-4 text-left text-[15px] font-semibold text-white outline-none transition hover:border-[#b9fb6a]/45 sm:h-[64px]"
+      >
+        <span className="min-w-0 truncate">{formatBrandSelection(value)}</span>
+        <span className="flex shrink-0 items-center gap-2">
+          {activeCount > 0 && (
+            <span className="rounded-full bg-[#b9fb6a]/15 px-2 py-1 text-[10px] font-black text-[#b9fb6a]">
+              {activeCount}
+            </span>
+          )}
+          <span className="text-white/50">⌄</span>
+        </span>
+      </button>
+
+      {open && (
+        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-30 max-h-[310px] overflow-auto rounded-2xl border border-white/12 bg-[#071a12] p-2 shadow-[0_18px_50px_rgba(0,0,0,.45)]">
+          <button
+            type="button"
+            onClick={() => {
+              onChange("ALL");
+              setOpen(false);
+            }}
+            className={`mb-1 flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-black transition ${
+              !selected.length
+                ? "bg-[#b9fb6a] text-[#071a12]"
+                : "text-white/75 hover:bg-white/[0.07]"
+            }`}
+          >
+            <span>Vse znamke</span>
+            {!selected.length && <span>✓</span>}
+          </button>
+
+          <div className="my-2 h-px bg-white/10" />
+
+          {options
+            .filter(([optionValue]) => normalize(optionValue) !== "ALL")
+            .map(([optionValue, optionLabel]) => {
+              const key = normalize(optionValue);
+              const checked = selectedSet.has(key);
+
+              return (
+                <button
+                  key={optionValue}
+                  type="button"
+                  onClick={() => toggleBrand(optionValue)}
+                  className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-bold transition ${
+                    checked
+                      ? "bg-[#b9fb6a]/14 text-[#b9fb6a] ring-1 ring-[#b9fb6a]/20"
+                      : "text-white/70 hover:bg-white/[0.07] hover:text-white"
+                  }`}
+                >
+                  <span className="truncate">{optionLabel}</span>
+                  <span
+                    className={`ml-3 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border text-[11px] ${
+                      checked
+                        ? "border-[#b9fb6a] bg-[#b9fb6a] text-[#071a12]"
+                        : "border-white/20 text-transparent"
+                    }`}
+                  >
+                    ✓
+                  </span>
+                </button>
+              );
+            })}
+
+          <div className="mt-2 rounded-xl bg-white/[0.04] px-3 py-2 text-[11px] leading-relaxed text-white/42">
+            Izbrane znamke uporabimo kot filter. Priporočeno, najcenejše in
+            najbližje se nato računajo samo med izbranimi črpalkami.
+          </div>
+        </div>
+      )}
     </div>
   );
 }

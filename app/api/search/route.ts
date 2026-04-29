@@ -257,6 +257,12 @@ function inferBrandKey(row: Pick<Result, "brand" | "name">) {
     "MOL",
     "SHELL",
     "OMV",
+    "HOFER",
+    "DISKONT",
+    "DISCOUNT",
+    "BP",
+    "GENOL",
+    "LAGERHAUS",
     "TURMÖL",
     "TURMOEL",
     "JET",
@@ -276,24 +282,99 @@ function inferBrandKey(row: Pick<Result, "brand" | "name">) {
   return known.find((brand) => name.includes(brand)) || "";
 }
 
+function parseBrandSelection(value?: string | null) {
+  const raw = String(value || "ALL").trim();
+  if (!raw || normalizeBrand(raw) === "ALL") return [];
+
+  return raw
+    .split(",")
+    .map((item) => normalizeBrand(item))
+    .filter(Boolean)
+    .filter((item) => item !== "ALL");
+}
+
+function brandValueMatches(
+  row: Pick<Result, "brand" | "name" | "address">,
+  selectedBrand: string,
+) {
+  const selected = normalizeBrand(selectedBrand);
+  if (!selected || selected === "ALL") return true;
+
+  const brand = normalizeBrand(row.brand);
+  const name = normalizeBrand(row.name);
+  const address = normalizeBrand(row.address);
+  const inferred = inferBrandKey(row);
+  const source = `${brand} ${name} ${address} ${inferred}`;
+
+  if (selected === "HOFER") {
+    return source.includes("HOFER") || source.includes("DISKONT");
+  }
+
+  if (selected === "DISKONT") {
+    return source.includes("DISKONT") || source.includes("HOFER");
+  }
+
+  if (selected === "TURMOEL") {
+    return source.includes("TURMÖL") || source.includes("TURMOEL");
+  }
+
+  return Boolean(
+    brand === selected ||
+    inferred === selected ||
+    brand.includes(selected) ||
+    selected.includes(brand) ||
+    name.includes(selected) ||
+    address.includes(selected),
+  );
+}
+
+function hasBrandToken(text: string, brand: string) {
+  return new RegExp(`(^|[^A-Z0-9])${brand}([^A-Z0-9]|$)`).test(text);
+}
+
 function brandMatches(
-  row: Pick<Result, "brand" | "name">,
+  row: Pick<Result, "brand" | "name" | "address">,
   selectedBrand: string,
 ) {
   if (!selectedBrand || selectedBrand === "ALL") return true;
 
-  const selected = normalizeBrand(selectedBrand);
-  const inferred = inferBrandKey(row);
+  const selectedBrands = selectedBrand
+    .split(",")
+    .map((item) => normalizeBrand(item))
+    .filter((item) => item && item !== "ALL");
+
+  if (!selectedBrands.length) return true;
+
+  const brand = normalizeBrand(row.brand);
   const name = normalizeBrand(row.name);
+  const address = normalizeBrand(row.address);
+  const inferred = inferBrandKey(row);
 
-  if (!inferred && !name) return false;
-  if (inferred === selected) return true;
+  const haystack = `${brand} ${name} ${address} ${inferred}`;
 
-  return (
-    inferred.includes(selected) ||
-    selected.includes(inferred) ||
-    name.includes(selected)
-  );
+  return selectedBrands.some((selected) => {
+    if (selected === "HOFER") {
+      return hasBrandToken(name, "HOFER") || hasBrandToken(address, "HOFER");
+    }
+
+    if (selected === "SHELL") {
+      return haystack.includes("SHELL");
+    }
+
+    if (selected === "OMV") {
+      return haystack.includes("OMV");
+    }
+
+    if (selected === "ENI" || selected === "AGIP") {
+      return haystack.includes("ENI") || haystack.includes("AGIP");
+    }
+
+    if (selected === "TURMOEL" || selected === "TURMÖL") {
+      return haystack.includes("TURMÖL") || haystack.includes("TURMOEL");
+    }
+
+    return haystack.includes(selected);
+  });
 }
 
 function countryMatches(
@@ -638,7 +719,9 @@ async function saveAustriaLivePrices(rows: Result[]) {
       row.source === "e-control.at" &&
       row.location_id?.startsWith("AT_") &&
       Number.isFinite(Number(row.price)) &&
-      row.trusted_price !== false,
+      row.trusted_price !== false &&
+      Number.isFinite(Number(row.lat)) &&
+      Number.isFinite(Number(row.lng)),
   );
 
   if (!pricedRows.length) return;
@@ -698,24 +781,108 @@ async function saveAustriaLivePrices(rows: Result[]) {
     (allLocations || []).map((loc) => [String(loc.source_id), loc.id]),
   );
 
-  const pricePayload = pricedRows
-    .map((row) => {
-      const sourceId = row.location_id.replace("AT_", "");
-      const locationId = locationIdBySourceId.get(sourceId);
+  const pricePayload: {
+    location_id: string;
+    fuel_type: string;
+    price: number;
+    currency: string;
+    source: string;
+    source_updated_at: string;
+    captured_at: string;
+  }[] = [];
 
-      if (!locationId) return null;
+  for (const row of pricedRows) {
+    const sourceId = row.location_id.replace("AT_", "");
+    const fallbackLocationId = locationIdBySourceId.get(sourceId);
 
-      return {
-        location_id: locationId,
-        fuel_type: row.fuel_type,
-        price: Number(row.price),
-        currency: "EUR",
-        source: "e-control.at",
-        source_updated_at: row.captured_at || new Date().toISOString(),
-        captured_at: row.captured_at || new Date().toISOString(),
-      };
-    })
-    .filter((item): item is NonNullable<typeof item> => item !== null);
+    if (!fallbackLocationId) continue;
+
+    const rowLat = Number(row.lat);
+    const rowLng = Number(row.lng);
+
+    const latDelta = 0.003;
+    const lngDelta = 0.003;
+
+    const { data: nearbyOsmLocations } = await supabase
+      .from("locations")
+      .select("id,name,brand,address,city,lat,lng,source")
+      .eq("country_code", "AT")
+      .eq("source", "openstreetmap_at")
+      .eq("is_active", true)
+      .gte("lat", rowLat - latDelta)
+      .lte("lat", rowLat + latDelta)
+      .gte("lng", rowLng - lngDelta)
+      .lte("lng", rowLng + lngDelta)
+      .limit(10);
+
+    const normalizedRowBrand = normalizeBrand(row.brand || row.name);
+    const normalizedRowName = normalizeBrand(row.name);
+    const normalizedRowAddress = normalizeBrand(row.address);
+
+    const matchedOsm = (nearbyOsmLocations || [])
+      .map((loc: any) => {
+        const locLat = Number(loc.lat);
+        const locLng = Number(loc.lng);
+
+        if (!Number.isFinite(locLat) || !Number.isFinite(locLng)) {
+          return null;
+        }
+
+        const distanceKm = haversineKm(rowLat, rowLng, locLat, locLng);
+        const locBrand = normalizeBrand(loc.brand || loc.name);
+        const locName = normalizeBrand(loc.name);
+        const locAddress = normalizeBrand(loc.address);
+
+        const sameBrand =
+          normalizedRowBrand &&
+          locBrand &&
+          (normalizedRowBrand.includes(locBrand) ||
+            locBrand.includes(normalizedRowBrand) ||
+            normalizedRowName.includes(locBrand) ||
+            locName.includes(normalizedRowBrand));
+
+        const sameAddress =
+          normalizedRowAddress &&
+          locAddress &&
+          (normalizedRowAddress.includes(locAddress) ||
+            locAddress.includes(normalizedRowAddress));
+
+        const score =
+          distanceKm * 1000 - (sameBrand ? 80 : 0) - (sameAddress ? 60 : 0);
+
+        return {
+          ...loc,
+          distanceKm,
+          sameBrand,
+          sameAddress,
+          score,
+        };
+      })
+      .filter(Boolean)
+      .sort((a: any, b: any) => a.score - b.score)[0];
+
+    const shouldUseOsmLocation =
+      matchedOsm &&
+      (matchedOsm.distanceKm <= 0.08 ||
+        (matchedOsm.distanceKm <= 0.15 && matchedOsm.sameBrand) ||
+        (matchedOsm.distanceKm <= 0.2 && matchedOsm.sameAddress));
+
+    const locationIdToUse = shouldUseOsmLocation
+      ? matchedOsm.id
+      : fallbackLocationId;
+
+    const capturedAt = row.captured_at || new Date().toISOString();
+
+    pricePayload.push({
+      location_id: locationIdToUse,
+      fuel_type: row.fuel_type,
+      price: Number(row.price),
+      currency: "EUR",
+      source: "e-control.at",
+      source_updated_at: capturedAt,
+      captured_at: capturedAt,
+    });
+  }
 
   if (!pricePayload.length) return;
 
