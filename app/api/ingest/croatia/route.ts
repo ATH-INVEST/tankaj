@@ -356,7 +356,7 @@ export async function GET(req: NextRequest) {
       const uniqueMap = new Map<string, (typeof pricePayloads)[number]>();
 
       for (const row of part) {
-        const key = `${row.location_id}-${row.fuel_type}-${row.source}-${row.source_updated_at}`;
+        const key = `${row.location_id}-${row.fuel_type}-${row.source}`;
 
         if (!uniqueMap.has(key)) {
           uniqueMap.set(key, row);
@@ -366,7 +366,7 @@ export async function GET(req: NextRequest) {
       const clean = Array.from(uniqueMap.values());
 
       const { error } = await supabase.from("fuel_prices").upsert(clean, {
-        onConflict: "location_id,fuel_type,source,source_updated_at",
+        onConflict: "location_id,fuel_type,source",
       });
 
       if (error) {

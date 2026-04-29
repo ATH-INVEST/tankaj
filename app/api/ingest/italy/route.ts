@@ -566,7 +566,7 @@ export async function GET(req: NextRequest) {
 
     for (const part of chunk(pricePayloads, PRICE_BATCH_SIZE)) {
       const { error } = await supabase.from("fuel_prices").upsert(part, {
-        onConflict: "location_id,fuel_type,source,source_updated_at",
+        onConflict: "location_id,fuel_type,source",
       });
 
       if (error) throw error;
