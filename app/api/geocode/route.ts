@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const COUNTRY_CODES = "si,hr,at,it,de";
+// 🔑 dodamo HU in ohranimo fokus na regijo
+const COUNTRY_CODES = "si,hr,at,it,hu,de";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -17,10 +18,14 @@ export async function GET(req: Request) {
   }
 
   const url = new URL("https://nominatim.openstreetmap.org/search");
-  url.searchParams.set("format", "jsonv2");
+
   url.searchParams.set("q", q);
-  url.searchParams.set("limit", "5");
+  url.searchParams.set("format", "jsonv2");
+  url.searchParams.set("limit", "8"); // 🔥 več rezultatov
   url.searchParams.set("addressdetails", "1");
+
+  // 🔑 KLJUČNO
+  url.searchParams.set("accept-language", "sl,en");
   url.searchParams.set("countrycodes", COUNTRY_CODES);
 
   const res = await fetch(url.toString(), {
@@ -40,17 +45,26 @@ export async function GET(req: Request) {
 
   const data = await res.json();
 
-  const results = (Array.isArray(data) ? data : []).map((item: any) => ({
-    label: item.display_name,
-    lat: Number(item.lat),
-    lng: Number(item.lon),
-    country_code: String(item.address?.country_code || "").toUpperCase(),
-  }));
+  let results = (Array.isArray(data) ? data : [])
+    .map((item: any) => ({
+      label: item.display_name,
+      lat: Number(item.lat),
+      lng: Number(item.lon),
+      country_code: String(item.address?.country_code || "").toUpperCase(),
+    }))
+    .filter(
+      (item: any) => Number.isFinite(item.lat) && Number.isFinite(item.lng),
+    );
+
+  // 🔥 BONUS: da Slovenija vedno pride prva
+  results = results.sort((a: any, b: any) => {
+    if (a.country_code === "SI") return -1;
+    if (b.country_code === "SI") return 1;
+    return 0;
+  });
 
   return NextResponse.json({
     success: true,
-    results: results.filter(
-      (item: any) => Number.isFinite(item.lat) && Number.isFinite(item.lng),
-    ),
+    results,
   });
 }
