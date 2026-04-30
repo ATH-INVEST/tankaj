@@ -30,6 +30,8 @@ type Result = {
 };
 
 const MAX_PRICE_AGE_HOURS = 24;
+const TANKERKOENIG_API_KEY = process.env.TANKERKOENIG_API_KEY || "";
+const GERMANY_CACHE_TTL_MINUTES = 10;
 
 type PriceQuality = {
   price_age_hours: number | null;
@@ -55,7 +57,7 @@ function normalizeFuelKey(fuelType: string) {
 function isRealisticFuelPrice(
   countryCode: string | null | undefined,
   fuelType: string,
-  price: number,
+  price: number
 ) {
   if (!Number.isFinite(price) || price <= 0) return false;
 
@@ -114,6 +116,10 @@ function isRealisticFuelPrice(
     if (isDiesel) return price >= 1.1 && price <= 2.4;
     if (isLpg) return price >= 0.45 && price <= 1.4;
   }
+  if (country === "DE") {
+    if (isPetrol95) return price >= 1.2 && price <= 2.7;
+    if (isDiesel) return price >= 1.2 && price <= 2.7;
+  }
 
   // Fallback EU range.
   return price >= 0.45 && price <= 3.0;
@@ -123,7 +129,7 @@ function getPriceQuality(
   countryCode: string | null | undefined,
   fuelType: string,
   price: number,
-  capturedAt: string | null | undefined,
+  capturedAt: string | null | undefined
 ): PriceQuality {
   const age = hoursSince(capturedAt);
   const price_age_hours = Number.isFinite(age) ? round(age, 2) : null;
@@ -253,30 +259,35 @@ function inferBrandKey(row: Pick<Result, "brand" | "name">) {
 
   const name = normalizeBrand(row.name);
   const known = [
-    "PETROL",
-    "MOL",
-    "SHELL",
-    "OMV",
-    "HOFER",
-    "DISKONT",
-    "DISCOUNT",
-    "BP",
-    "GENOL",
-    "LAGERHAUS",
-    "TURMÖL",
-    "TURMOEL",
-    "JET",
+    "AGIP",
+    "ARAL",
     "AVIA",
-    "MAXEN",
-    "INA",
-    "TIFON",
+    "BP",
     "CRODUX",
+    "DISCOUNT",
+    "DISKONT",
     "ENI",
-    "Q8",
-    "IP",
-    "TAMOIL",
     "ESSO",
+    "GENOL",
+    "HEM",
+    "HOFER",
+    "INA",
+    "IP",
+    "JET",
+    "LAGERHAUS",
+    "MAXEN",
+    "MOL",
+    "OMV",
+    "ORLEN",
+    "PETROL",
+    "Q8",
+    "SHELL",
+    "STAR",
+    "TAMOIL",
+    "TIFON",
     "TOTALENERGIES",
+    "TURMOEL",
+    "TURMÖL",
   ];
 
   return known.find((brand) => name.includes(brand)) || "";
@@ -295,7 +306,7 @@ function parseBrandSelection(value?: string | null) {
 
 function brandValueMatches(
   row: Pick<Result, "brand" | "name" | "address">,
-  selectedBrand: string,
+  selectedBrand: string
 ) {
   const selected = normalizeBrand(selectedBrand);
   if (!selected || selected === "ALL") return true;
@@ -320,11 +331,11 @@ function brandValueMatches(
 
   return Boolean(
     brand === selected ||
-    inferred === selected ||
-    brand.includes(selected) ||
-    selected.includes(brand) ||
-    name.includes(selected) ||
-    address.includes(selected),
+      inferred === selected ||
+      brand.includes(selected) ||
+      selected.includes(brand) ||
+      name.includes(selected) ||
+      address.includes(selected)
   );
 }
 
@@ -334,7 +345,7 @@ function hasBrandToken(text: string, brand: string) {
 
 function brandMatches(
   row: Pick<Result, "brand" | "name" | "address">,
-  selectedBrand: string,
+  selectedBrand: string
 ) {
   if (!selectedBrand || selectedBrand === "ALL") return true;
 
@@ -379,7 +390,7 @@ function brandMatches(
 
 function countryMatches(
   rowCountry: string | null | undefined,
-  selectedCountry: string,
+  selectedCountry: string
 ) {
   if (!selectedCountry || selectedCountry === "ALL") return true;
 
@@ -393,7 +404,6 @@ function countryMatches(
   if (selected === "IT") return ["IT", "ITA"].includes(row);
   if (selected === "HU") return ["HU", "HUN"].includes(row);
   if (selected === "DE") return ["DE", "DEU", "GER", "GERMANY"].includes(row);
-
   return false;
 }
 
@@ -428,20 +438,24 @@ function uniqueByLocation(rows: Result[]) {
     const lat = Number(row.lat);
     const lng = Number(row.lng);
     const country = String(row.country_code || "").toUpperCase();
+    const fuel = normalizeFuelKey(row.fuel_type);
 
     const coordKey =
       Number.isFinite(lat) && Number.isFinite(lng)
-        ? `${country}_${lat.toFixed(5)}_${lng.toFixed(5)}_${normalizeFuelKey(row.fuel_type)}`
+        ? `${country}_${lat.toFixed(5)}_${lng.toFixed(5)}_${fuel}`
         : row.location_id;
 
     const shouldDeduplicateByCoords =
-      country === "AT" &&
-      (row.source === "e-control.at" ||
-        row.source === "fuel_prices_cache" ||
-        row.location_id.startsWith("AT_"));
+      (country === "AT" &&
+        (row.source === "e-control.at" ||
+          row.source === "fuel_prices_cache" ||
+          row.location_id.startsWith("AT_"))) ||
+      (country === "DE" &&
+        (row.source === "tankerkoenig_live" ||
+          row.source === "tankerkoenig" ||
+          row.location_id.startsWith("DE_")));
 
     const key = shouldDeduplicateByCoords ? coordKey : row.location_id;
-
     const existing = map.get(key);
 
     if (!existing) {
@@ -449,8 +463,17 @@ function uniqueByLocation(rows: Result[]) {
       continue;
     }
 
-    const existingIsLive = existing.location_id.startsWith("AT_");
-    const rowIsLive = row.location_id.startsWith("AT_");
+    const existingIsLive =
+      existing.source === "tankerkoenig_live" ||
+      existing.source === "e-control.at" ||
+      existing.location_id.startsWith("DE_") ||
+      existing.location_id.startsWith("AT_");
+
+    const rowIsLive =
+      row.source === "tankerkoenig_live" ||
+      row.source === "e-control.at" ||
+      row.location_id.startsWith("DE_") ||
+      row.location_id.startsWith("AT_");
 
     if (rowIsLive && !existingIsLive) {
       map.set(key, row);
@@ -503,7 +526,7 @@ function buildInitialCandidatePool(rows: Result[], amount: number) {
     coverage.push(
       ...[...group]
         .sort((a, b) => n(a.distance_km, 999) - n(b.distance_km, 999))
-        .slice(0, COUNTRY_COVERAGE_LIMIT),
+        .slice(0, COUNTRY_COVERAGE_LIMIT)
     );
   }
 
@@ -511,7 +534,7 @@ function buildInitialCandidatePool(rows: Result[], amount: number) {
     coverage.push(
       ...[...group]
         .sort((a, b) => n(a.distance_km, 999) - n(b.distance_km, 999))
-        .slice(0, BRAND_COVERAGE_LIMIT),
+        .slice(0, BRAND_COVERAGE_LIMIT)
     );
   }
 
@@ -520,7 +543,7 @@ function buildInitialCandidatePool(rows: Result[], amount: number) {
 
   return uniqueByLocation([...mandatory, ...optional]).slice(
     0,
-    INITIAL_CANDIDATE_LIMIT,
+    INITIAL_CANDIDATE_LIMIT
   );
 }
 
@@ -528,7 +551,7 @@ function buildMoreCandidatePool(
   rows: Result[],
   amount: number,
   sortBy: SortBy,
-  offset: number,
+  offset: number
 ) {
   const sorted = [...rows].sort((a, b) => {
     if (sortBy === "price") {
@@ -592,7 +615,7 @@ function normalizeAustriaBrand(name: string): string | null {
 
 function getAustriaPrice(
   station: AustriaStation,
-  fuel: AustriaFuelType,
+  fuel: AustriaFuelType
 ): number | null {
   const prices = station.prices ?? [];
   const match = prices.find((price) => price.fuelType === fuel);
@@ -616,10 +639,194 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+type TankerkoenigStation = {
+  id: string;
+  name: string;
+  brand?: string | null;
+  street?: string | null;
+  houseNumber?: string | null;
+  postCode?: number | string | null;
+  place?: string | null;
+  lat: number;
+  lng: number;
+  dist?: number;
+  e5?: number | null;
+  e10?: number | null;
+  diesel?: number | null;
+  price?: number | null;
+  isOpen?: boolean;
+};
+
+type TankerkoenigResponse = {
+  ok: boolean;
+  stations?: TankerkoenigStation[];
+  message?: string;
+  data?: string;
+};
+
+function mapGermanyFuelPrice(station: TankerkoenigStation, type: string) {
+  const fuel = normalizeFuelKey(type);
+
+  if (fuel === "DIESEL") return Number(station.diesel ?? station.price);
+  if (fuel === "PETROL_E10") return Number(station.e10 ?? station.price);
+
+  return Number(station.e5 ?? station.price);
+}
+
+function buildGermanyAddress(station: TankerkoenigStation) {
+  return (
+    [station.street, station.houseNumber].filter(Boolean).join(" ").trim() ||
+    null
+  );
+}
+
+function germanyCacheKey(
+  lat: number,
+  lng: number,
+  radius: number,
+  type: string
+) {
+  return [
+    "germany_search",
+    lat.toFixed(2),
+    lng.toFixed(2),
+    Math.min(Math.max(Math.round(radius), 1), 25),
+    normalizeFuelKey(type),
+  ].join(":");
+}
+
+async function readGermanyCachedRows(
+  cacheKey: string
+): Promise<Result[] | null> {
+  const since = new Date(
+    Date.now() - GERMANY_CACHE_TTL_MINUTES * 60 * 1000
+  ).toISOString();
+
+  const { data, error } = await supabase
+    .from("ingest_cache")
+    .select("payload,updated_at")
+    .eq("cache_key", cacheKey)
+    .gte("updated_at", since)
+    .maybeSingle();
+
+  if (error || !data) return null;
+
+  const rows = (data.payload as { rows?: Result[] } | null)?.rows;
+
+  return Array.isArray(rows) ? rows : null;
+}
+
+async function writeGermanyCachedRows(cacheKey: string, rows: Result[]) {
+  await supabase.from("ingest_cache").upsert(
+    {
+      cache_key: cacheKey,
+      source: "tankerkoenig_search",
+      payload: {
+        rows,
+        cached_at: new Date().toISOString(),
+      },
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "cache_key" }
+  );
+}
+
+async function fetchGermanyRows(
+  lat: number,
+  lng: number,
+  radius: number,
+  type: string
+): Promise<Result[]> {
+  if (!TANKERKOENIG_API_KEY) return [];
+
+  const safeRadius = Math.min(Math.max(radius, 1), 25);
+  const cacheKey = germanyCacheKey(lat, lng, safeRadius, type);
+
+  const cachedRows = await readGermanyCachedRows(cacheKey);
+  if (cachedRows) return cachedRows;
+
+  const url = new URL("https://creativecommons.tankerkoenig.de/json/list.php");
+  url.searchParams.set("lat", String(lat));
+  url.searchParams.set("lng", String(lng));
+  url.searchParams.set("rad", String(safeRadius));
+  url.searchParams.set("sort", "dist");
+  url.searchParams.set("type", "all");
+  url.searchParams.set("apikey", TANKERKOENIG_API_KEY);
+
+  try {
+    const res = await fetch(url.toString(), {
+      headers: {
+        accept: "application/json",
+        "user-agent": "Tankaj.si Germany on-demand search",
+      },
+      cache: "no-store",
+    });
+
+    const json = (await res.json()) as TankerkoenigResponse;
+
+    if (!res.ok || !json.ok) {
+      console.warn("Tankerkönig search failed", {
+        status: res.status,
+        message: json.message ?? json.data ?? "unknown",
+      });
+
+      return [];
+    }
+
+    const capturedAt = new Date().toISOString();
+
+    const rows = (json.stations || [])
+      .map((station): Result | null => {
+        const stationLat = Number(station.lat);
+        const stationLng = Number(station.lng);
+        const price = mapGermanyFuelPrice(station, type);
+
+        if (
+          !station.id ||
+          !Number.isFinite(stationLat) ||
+          !Number.isFinite(stationLng) ||
+          !Number.isFinite(price) ||
+          price <= 0
+        ) {
+          return null;
+        }
+
+        return {
+          location_id: `DE_${station.id}`,
+          name: station.name || station.brand || "Tankstelle",
+          brand: station.brand || null,
+          address: buildGermanyAddress(station),
+          city: station.place || null,
+          country_code: "DE",
+          lat: stationLat,
+          lng: stationLng,
+          distance_km: round(haversineKm(lat, lng, stationLat, stationLng)),
+          estimated_drive_minutes: null,
+          fuel_type: normalizeFuelKey(type),
+          price,
+          fuel_cost: null,
+          source: "tankerkoenig_live",
+          captured_at: capturedAt,
+        };
+      })
+      .filter((row): row is Result => row !== null)
+      .filter((row) => row.distance_km <= safeRadius)
+      .map(withPriceQuality)
+      .filter((row) => row.trusted_price === true);
+
+    await writeGermanyCachedRows(cacheKey, rows);
+
+    return rows;
+  } catch (error) {
+    console.warn("Tankerkönig search error", error);
+    return [];
+  }
+}
+
 async function fetchAustriaRows(
   lat: number,
   lng: number,
-  type: string,
+  type: string
 ): Promise<Result[]> {
   const fuel = mapAustriaFuelType(type);
   const capturedAt = new Date().toISOString();
@@ -646,7 +853,7 @@ async function fetchAustriaRows(
 
   async function fetchPoint(point: { lat: number; lng: number }) {
     const url = new URL(
-      "https://api.e-control.at/sprit/1.0/search/gas-stations/by-address",
+      "https://api.e-control.at/sprit/1.0/search/gas-stations/by-address"
     );
 
     url.searchParams.set("latitude", String(point.lat));
@@ -723,13 +930,13 @@ async function saveAustriaLivePrices(rows: Result[]) {
       Number.isFinite(Number(row.price)) &&
       row.trusted_price !== false &&
       Number.isFinite(Number(row.lat)) &&
-      Number.isFinite(Number(row.lng)),
+      Number.isFinite(Number(row.lng))
   );
 
   if (!pricedRows.length) return;
 
   const sourceIds = Array.from(
-    new Set(pricedRows.map((row) => row.location_id.replace("AT_", ""))),
+    new Set(pricedRows.map((row) => row.location_id.replace("AT_", "")))
   );
 
   const { data: existingLocations } = await supabase
@@ -740,12 +947,12 @@ async function saveAustriaLivePrices(rows: Result[]) {
     .in("source_id", sourceIds);
 
   const existingBySourceId = new Map(
-    (existingLocations || []).map((loc) => [String(loc.source_id), loc.id]),
+    (existingLocations || []).map((loc) => [String(loc.source_id), loc.id])
   );
 
   const missingLocations = pricedRows
     .filter(
-      (row) => !existingBySourceId.has(row.location_id.replace("AT_", "")),
+      (row) => !existingBySourceId.has(row.location_id.replace("AT_", ""))
     )
     .map((row) => ({
       type: "fuel_station",
@@ -780,7 +987,7 @@ async function saveAustriaLivePrices(rows: Result[]) {
     .in("source_id", sourceIds);
 
   const locationIdBySourceId = new Map(
-    (allLocations || []).map((loc) => [String(loc.source_id), loc.id]),
+    (allLocations || []).map((loc) => [String(loc.source_id), loc.id])
   );
 
   const pricePayload: {
@@ -897,7 +1104,7 @@ async function fetchAustriaDbRows(
   lat: number,
   lng: number,
   radius: number,
-  type: string,
+  type: string
 ): Promise<Result[]> {
   const safeRadius = Math.min(Math.max(radius, 1), 300);
   const latDelta = safeRadius / 111;
@@ -922,7 +1129,7 @@ async function fetchAustriaDbRows(
         price,
         captured_at
       )
-    `,
+    `
     )
     .eq("country_code", "AT")
     .gte("lat", lat - latDelta)
@@ -944,7 +1151,7 @@ async function fetchAustriaDbRows(
       if (distance > safeRadius) return null;
 
       const priceRow = (loc.fuel_prices || []).find(
-        (p: any) => normalizeFuelKey(p.fuel_type) === normalizeFuelKey(type),
+        (p: any) => normalizeFuelKey(p.fuel_type) === normalizeFuelKey(type)
       );
 
       const price = Number(priceRow?.price);
@@ -978,7 +1185,7 @@ async function fetchAustriaOsmRows(
   lat: number,
   lng: number,
   radius: number,
-  type: string,
+  type: string
 ): Promise<Result[]> {
   const safeRadius = Math.min(Math.max(radius, 1), 300);
   const latDelta = safeRadius / 111;
@@ -987,7 +1194,7 @@ async function fetchAustriaOsmRows(
   const { data, error } = await supabase
     .from("locations")
     .select(
-      "id,name,brand,address,city,country_code,lat,lng,source,source_id,updated_at,is_active",
+      "id,name,brand,address,city,country_code,lat,lng,source,source_id,updated_at,is_active"
     )
     .eq("country_code", "AT")
     .eq("source", "openstreetmap_at")
@@ -1038,7 +1245,7 @@ async function fetchAustriaOsmRows(
 async function mapWithConcurrency<T, R>(
   items: T[],
   concurrency: number,
-  mapper: (item: T, index: number) => Promise<R>,
+  mapper: (item: T, index: number) => Promise<R>
 ) {
   const results = new Array<R>(items.length);
   let nextIndex = 0;
@@ -1051,7 +1258,7 @@ async function mapWithConcurrency<T, R>(
   }
 
   await Promise.all(
-    Array.from({ length: Math.min(concurrency, items.length) }, () => worker()),
+    Array.from({ length: Math.min(concurrency, items.length) }, () => worker())
   );
 
   return results;
@@ -1059,7 +1266,7 @@ async function mapWithConcurrency<T, R>(
 
 async function getCachedRoute(
   from: { lat: number; lng: number },
-  to: { lat: number; lng: number },
+  to: { lat: number; lng: number }
 ) {
   const { data, error } = await supabase
     .from("route_cache")
@@ -1090,7 +1297,7 @@ async function saveCachedRoute(
     distance_km: number;
     duration_min: number;
     route_source: RouteSource;
-  },
+  }
 ) {
   await supabase.from("route_cache").upsert(
     {
@@ -1102,19 +1309,19 @@ async function saveCachedRoute(
       duration_min: Math.round(route.duration_min),
       route_source: route.route_source,
       expires_at: new Date(
-        Date.now() + ROUTE_CACHE_DAYS * 24 * 60 * 60 * 1000,
+        Date.now() + ROUTE_CACHE_DAYS * 24 * 60 * 60 * 1000
       ).toISOString(),
     },
     {
       onConflict:
         "from_lat_rounded,from_lng_rounded,to_lat_rounded,to_lng_rounded",
-    },
+    }
   );
 }
 
 async function getOsrm(
   from: { lat: number; lng: number },
-  to: { lat: number; lng: number },
+  to: { lat: number; lng: number }
 ) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
@@ -1126,7 +1333,7 @@ async function getOsrm(
         headers: { accept: "application/json" },
         cache: "no-store",
         signal: controller.signal,
-      },
+      }
     );
 
     if (!res.ok) throw new Error(`OSRM failed: ${res.status}`);
@@ -1150,7 +1357,7 @@ async function getOsrm(
 
 async function getRoute(
   from: { lat: number; lng: number },
-  to: { lat: number; lng: number },
+  to: { lat: number; lng: number }
 ) {
   const cached = await getCachedRoute(from, to);
   if (cached) return cached;
@@ -1196,7 +1403,7 @@ async function enrich(rows: Result[], user: { lat: number; lng: number }) {
       } catch {
         return null;
       }
-    },
+    }
   );
 
   return routed.filter(Boolean) as RoutedResult[];
@@ -1207,7 +1414,7 @@ function score(
   amount: number,
   consumption: number,
   timeValue: number,
-  userCountry: string | null,
+  userCountry: string | null
 ) {
   return rows.map((r) => {
     const existingFuelCost =
@@ -1216,10 +1423,10 @@ function score(
       r.fuel_cost > 0
         ? r.fuel_cost
         : typeof r.total_cost === "number" &&
-            Number.isFinite(r.total_cost) &&
-            r.total_cost > 0
-          ? r.total_cost
-          : null;
+          Number.isFinite(r.total_cost) &&
+          r.total_cost > 0
+        ? r.total_cost
+        : null;
 
     const price =
       priceSortValue(r.price) === 999 ? null : priceSortValue(r.price);
@@ -1286,8 +1493,8 @@ function pickWinner(rows: AnyResult[], sortBy: SortBy, radius: number) {
       sortBy === "price"
         ? "Najcenejša opcija v izbranem radiusu."
         : sortBy === "distance"
-          ? "Najbližja črpalka po realni poti."
-          : "Najboljša kombinacija cene, poti in časa.",
+        ? "Najbližja črpalka po realni poti."
+        : "Najboljša kombinacija cene, poti in časa.",
   };
 }
 
@@ -1314,7 +1521,7 @@ export async function GET(req: Request) {
     "PETROL_95";
 
   const consumption = Number(
-    searchParams.get("consumption") || CONSUMPTION_DEFAULT,
+    searchParams.get("consumption") || CONSUMPTION_DEFAULT
   );
   const timeValue = Number(searchParams.get("timeValue") || TIME_VALUE_DEFAULT);
 
@@ -1328,25 +1535,25 @@ export async function GET(req: Request) {
     searchParams.get("batch") === "more" ? "more" : "initial";
   const offset = Math.max(
     0,
-    Number(searchParams.get("offset") || INITIAL_PER_BUCKET),
+    Number(searchParams.get("offset") || INITIAL_PER_BUCKET)
   );
 
   const brandFilter = normalizeBrand(
-    searchParams.get("brand") || searchParams.get("brandFilter"),
+    searchParams.get("brand") || searchParams.get("brandFilter")
   );
   const countryFilter = searchParams.get("country") || "ALL";
 
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return NextResponse.json(
       { success: false, error: "Missing or invalid coords" },
-      { status: 400 },
+      { status: 400 }
     );
   }
 
   if (!Number.isFinite(radius) || radius <= 0) {
     return NextResponse.json(
       { success: false, error: "Missing or invalid radius" },
-      { status: 400 },
+      { status: 400 }
     );
   }
 
@@ -1399,8 +1606,17 @@ export async function GET(req: Request) {
     ...austriaOsmRows,
   ]);
 
-  let rows = uniqueByLocation([...dbRows, ...austriaRows]).map(
-    withPriceQuality,
+  const shouldUseGermany =
+    countryFilter === "DE" || (countryFilter === "ALL" && userCountry === "DE");
+
+  const germanyRows = shouldUseGermany
+    ? (await fetchGermanyRows(lat, lng, radius, type))
+        .filter(hasCoords)
+        .map(withPriceQuality)
+    : [];
+
+  let rows = uniqueByLocation([...germanyRows, ...dbRows, ...austriaRows]).map(
+    withPriceQuality
   );
 
   if (brandFilter && brandFilter !== "ALL") {
@@ -1433,7 +1649,7 @@ export async function GET(req: Request) {
       r.is_real_route &&
       Number.isFinite(r.distance_km) &&
       Number.isFinite(r.estimated_drive_minutes) &&
-      Number.isFinite(r.effective_total_cost),
+      Number.isFinite(r.effective_total_cost)
   );
 
   const validTrusted = valid.filter((r) => r.trusted_price === true);
@@ -1444,7 +1660,7 @@ export async function GET(req: Request) {
 
   const results = sortResults(
     validTrusted.filter((r) => r.distance_km <= radius),
-    sortBy,
+    sortBy
   );
 
   const nextOffset =
@@ -1472,6 +1688,7 @@ export async function GET(req: Request) {
       austria_db_count: austriaDbRows.length,
       austria_live_count: austriaLiveRows.length,
       austria_osm_count: austriaOsmRows.length,
+      germany_live_count: germanyRows.length,
       trusted_rows_count: trustedRows.length,
       fallback_rows_count: fallbackRows.length,
       candidate_pool_count: candidatePool.length,
