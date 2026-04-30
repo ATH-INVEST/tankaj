@@ -392,11 +392,13 @@ function countryMatches(
   if (selected === "AT") return ["AT", "AUT"].includes(row);
   if (selected === "IT") return ["IT", "ITA"].includes(row);
   if (selected === "HU") return ["HU", "HUN"].includes(row);
+  if (selected === "DE") return ["DE", "DEU", "GER", "GERMANY"].includes(row);
 
   return false;
 }
 
 function inferUserCountry(lat: number, lng: number) {
+  if (lat >= 47.2 && lat <= 55.2 && lng >= 5.5 && lng <= 15.5) return "DE";
   if (lat >= 46.3 && lat <= 49.2 && lng >= 9.4 && lng <= 17.3) return "AT";
   if (lat >= 45 && lat <= 47 && lng >= 13 && lng <= 17) return "SI";
   if (lat >= 42 && lat <= 47 && lng >= 13 && lng <= 20) return "HR";
