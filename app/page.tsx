@@ -2540,9 +2540,10 @@ function HeroSearch({
           ) : (
             <>
               <EvChargeSwitch
-                value={evChargingMode}
-                onChange={setEvChargingMode}
-              />
+  lang={lang}
+  value={evChargingMode}
+  onChange={setEvChargingMode}
+/>
 
               <SelectDark
                 label={tr(lang, "radius")}
