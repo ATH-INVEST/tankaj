@@ -177,6 +177,37 @@ const TEXT = {
     footerAuthor: "Avtor",
     footerCopyright: "© 2026 Tankaj.si",
     footerContact: "Kontakt na LinkedIn",
+    allCountries: "Vse države",
+    slovenia: "Slovenija",
+    croatia: "Hrvaška",
+    austria: "Avstrija",
+    italy: "Italija",
+    germany: "Nemčija",
+    bestOption: "Najboljša izbira",
+    bestEvOption: "Najboljša EV izbira",
+    fuelPrice: "Cena goriva",
+    chargingPrice: "Cena polnjenja",
+    drive: "Vožnja",
+    estimatedTotalCost: "Ocenjen skupni strošek",
+    navigation: "Navigacija",
+    share: "Deli",
+    copied: "Kopirano ✓",
+    actualTariff: "Dejanska tarifa",
+    referenceEstimate: "Referenčna ocena",
+    source: "Vir",
+    fuelReasonSmart: "Najboljša kombinacija izbranih stroškov.",
+    fuelReasonPrice: "Najcenejša cena na liter v izbranem radiusu.",
+    fuelReasonDistance: "Najbližja črpalka po realni cestni poti.",
+    evReasonSmart:
+      "Najboljša kombinacija cene polnjenja, poti, časa in moči polnilnice.",
+    evReasonPrice: "Najcenejša cena na kWh med prikazanimi polnilnicami.",
+    evReasonDistance: "Najbližja EV polnilnica po realni cestni poti.",
+    fuelMapsNote:
+      "Izračun je ocena poti do črpalke. Google Maps lahko pokaže drugačen čas zaradi prometa ali prehoda meje.",
+    evVerifiedNote:
+      "Cena polnjenja temelji na znani tarifi, vseeno pred polnjenjem preveri točen cenik pri ponudniku.",
+    evEstimatedNote:
+      "EV cena je referenčna ocena za državo in tip polnjenja. Dejanska tarifa se lahko razlikuje glede na ponudnika, aplikacijo ali roaming kartico.",
   },
   en: {
     countries: "Slovenia, Croatia, Austria, Italy, Germany",
@@ -265,6 +296,37 @@ const TEXT = {
     footerAuthor: "Author",
     footerCopyright: "© 2026 Tankaj.si",
     footerContact: "Contact on LinkedIn",
+    allCountries: "All countries",
+    slovenia: "Slovenia",
+    croatia: "Croatia",
+    austria: "Austria",
+    italy: "Italy",
+    germany: "Germany",
+    bestOption: "Best option",
+    bestEvOption: "Best EV option",
+    fuelPrice: "Fuel price",
+    chargingPrice: "Charging price",
+    drive: "Drive",
+    estimatedTotalCost: "Estimated total cost",
+    navigation: "Navigation",
+    share: "Share",
+    copied: "Copied ✓",
+    actualTariff: "Actual tariff",
+    referenceEstimate: "Reference estimate",
+    source: "Source",
+    fuelReasonSmart: "Best combination of selected costs.",
+    fuelReasonPrice: "Cheapest price per litre in the selected radius.",
+    fuelReasonDistance: "Nearest fuel station by real road route.",
+    evReasonSmart:
+      "Best combination of charging price, route, time and charger power.",
+    evReasonPrice: "Cheapest price per kWh among shown chargers.",
+    evReasonDistance: "Nearest EV charger by real road route.",
+    fuelMapsNote:
+      "The calculation is an estimate of the route to the station. Google Maps may show a different time due to traffic or border crossing.",
+    evVerifiedNote:
+      "Charging price is based on a known tariff, but always check the exact price with the provider before charging.",
+    evEstimatedNote:
+      "The EV price is a reference estimate for the country and charging type. The actual tariff may differ depending on provider, app or roaming card.",
   },
 } satisfies Record<Lang, Record<string, string>>;
 
@@ -286,13 +348,13 @@ const SORT_OPTIONS_EV: [SortBy, string][] = [
 ];
 
 const COUNTRY_OPTIONS = [
-  ["ALL", "Vse države"],
-  ["SI", "Slovenija"],
-  ["HR", "Hrvaška"],
-  ["AT", "Avstrija"],
-  ["IT", "Italija"],
-  ["DE", "Nemčija"],
-];
+  ["ALL", "allCountries"],
+  ["SI", "slovenia"],
+  ["HR", "croatia"],
+  ["AT", "austria"],
+  ["IT", "italy"],
+  ["DE", "germany"],
+] as const;
 
 function formatMoney(value?: number | null) {
   if (!Number.isFinite(Number(value))) return "—";
@@ -683,18 +745,16 @@ function sortClientResults(
   });
 }
 
-function reasonBySort(sortBy: SortBy, mode: SearchMode) {
+function reasonBySort(sortBy: SortBy, mode: SearchMode, lang: Lang) {
   if (mode === "ev") {
-    if (sortBy === "price")
-      return "Najcenejša cena na kWh med prikazanimi polnilnicami.";
-    if (sortBy === "distance")
-      return "Najbližja EV polnilnica po realni cestni poti.";
-    return "Najboljša kombinacija cene polnjenja, poti, časa in moči polnilnice.";
+    if (sortBy === "price") return tr(lang, "evReasonPrice");
+    if (sortBy === "distance") return tr(lang, "evReasonDistance");
+    return tr(lang, "evReasonSmart");
   }
 
-  if (sortBy === "price") return "Najcenejša cena na liter v izbranem radiusu.";
-  if (sortBy === "distance") return "Najbližja črpalka po realni cestni poti.";
-  return "Najboljša kombinacija izbranih stroškov.";
+  if (sortBy === "price") return tr(lang, "fuelReasonPrice");
+  if (sortBy === "distance") return tr(lang, "fuelReasonDistance");
+  return tr(lang, "fuelReasonSmart");
 }
 
 function buildCrossBorderInsight(
@@ -2556,6 +2616,7 @@ function HeroSearch({
           {mode === "fuel" ? (
             <>
               <SelectDark
+                lang={lang}
                 label={tr(lang, "fuelLabel")}
                 value={fuelType}
                 onChange={setFuelType}
@@ -2571,6 +2632,7 @@ function HeroSearch({
                 ]}
               />
               <SelectDark
+                lang={lang}
                 label={tr(lang, "radius")}
                 value={String(radius)}
                 onChange={(v) => setRadius(Number(v))}
@@ -2596,6 +2658,7 @@ function HeroSearch({
                 options={brandOptions}
               />
               <SelectDark
+                lang={lang}
                 label={tr(lang, "country")}
                 value={country}
                 onChange={setCountry}
@@ -2611,6 +2674,7 @@ function HeroSearch({
               />
 
               <SelectDark
+                lang={lang}
                 label={tr(lang, "radius")}
                 value={String(radius)}
                 onChange={(v) => setRadius(Number(v))}
@@ -2652,6 +2716,7 @@ function HeroSearch({
                   />
 
                   <SelectDark
+                    lang={lang}
                     label={
                       evChargingMode === "AC"
                         ? tr(lang, "acPower")
@@ -2823,9 +2888,10 @@ function ResultPanel({
           )}
 
           <BestCard
+            lang={lang}
             item={{
               ...best,
-              recommendation_reason: reasonBySort(sortBy, mode),
+              recommendation_reason: reasonBySort(sortBy, mode, lang),
             }}
             savingVsNearest={savingVsNearest}
             mapsUrl={mapsUrl}
@@ -2964,6 +3030,7 @@ function EvTariffChips({ item }: { item: Result }) {
 }
 
 function BestCard({
+  lang,
   item,
   savingVsNearest,
   mapsUrl,
@@ -2982,7 +3049,7 @@ function BestCard({
         <div className="min-w-0 overflow-hidden">
           <div className="inline-flex rounded-full bg-[#b9fb6a]/14 px-3 py-1 text-[10px] font-black uppercase tracking-[.22em] text-[#b9fb6a] ring-1 ring-[#b9fb6a]/25 sm:text-xs sm:tracking-[.24em]">
             {" "}
-            {ev ? "Najboljša EV izbira" : "Najboljša izbira"}
+            {ev ? tr(lang, "bestEvOption") : tr(lang, "bestOption")}
           </div>
           <h2 className="mt-2 break-words text-xl font-black leading-tight tracking-tight sm:text-3xl">
             {item.name}
@@ -3011,7 +3078,7 @@ function BestCard({
             </div>
             <div className="min-w-0 overflow-hidden">
               <div className="text-xs text-white/45">
-                {ev ? "Cena polnjenja" : "Cena goriva"}
+                {ev ? tr(lang, "chargingPrice") : tr(lang, "fuelPrice")}
               </div>
               <div className="truncate text-2xl font-black text-[#b9fb6a] sm:text-3xl">
                 {formatUnitPrice(item)}
@@ -3035,14 +3102,14 @@ function BestCard({
                       }`}
                     >
                       {item.is_verified
-                        ? "Dejanska tarifa"
-                        : "Referenčna ocena"}
+                        ? tr(lang, "actualTariff")
+                        : tr(lang, "referenceEstimate")}
                     </span>
                   </div>
 
                   {item.price_source_name && (
                     <div className="mt-2 text-[11px] text-white/45">
-                      Vir: {item.price_source_name}
+                      {tr(lang, "source")}: {item.price_source_name}
                     </div>
                   )}
 
@@ -3052,7 +3119,7 @@ function BestCard({
             </div>
           </div>
           <div className="min-w-0 text-right">
-            <div className="text-xs text-white/45">Vožnja</div>
+            <div className="text-xs text-white/45">{tr(lang, "drive")}</div>
             <div className="font-black">{formatKm(item.distance_km)}</div>
             <div className="text-xs text-white/45">
               ~{item.estimated_drive_minutes} min
@@ -3062,17 +3129,17 @@ function BestCard({
 
         <div className="mt-4 grid min-w-0 grid-cols-3 gap-2 [&>*]:min-w-0">
           <CostPill
-            label={ev ? "Energija" : "Gorivo"}
+            label={ev ? tr(lang, "energy") : tr(lang, "fuelCost")}
             value={includeFuel ? formatCost(item.fuel_cost) : "—"}
             active={includeFuel}
           />
           <CostPill
-            label="Pot"
+            label={tr(lang, "route")}
             value={includePath ? formatCost(item.travel_fuel_cost) : "—"}
             active={includePath}
           />
           <CostPill
-            label="Čas"
+            label={tr(lang, "time")}
             value={includeTime ? formatCost(item.time_cost) : "—"}
             active={includeTime}
           />
@@ -3080,7 +3147,7 @@ function BestCard({
 
         <div className="mt-3 rounded-2xl border border-[#b9fb6a]/70 bg-[#b9fb6a]/12 p-4 text-white shadow-[0_0_0_1px_rgba(185,251,106,.08),0_18px_46px_rgba(185,251,106,.10)]">
           <div className="text-xs font-black uppercase tracking-[.2em] text-[#b9fb6a]/85">
-            Ocenjen skupni strošek
+            {tr(lang, "estimatedTotalCost")}
           </div>
           <div className="mt-1 text-3xl font-black text-[#b9fb6a]">
             {displayTotal < 999999 ? formatMoney(displayTotal) : "—"}
@@ -3107,22 +3174,21 @@ function BestCard({
           }
           className="rounded-2xl bg-white px-4 py-3 text-center text-sm font-black text-[#071a12]"
         >
-          Navigacija
+          {tr(lang, "navigation")}
         </a>
         <button
           onClick={shareResult}
           className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-black text-white transition hover:bg-white/[0.08]"
         >
-          {shareCopied ? "Kopirano ✓" : "Deli"}
+          {shareCopied ? tr(lang, "copied") : tr(lang, "share")}
         </button>
       </div>
       <p className="mt-3 text-[11px] leading-relaxed text-white/35">
         {ev
           ? item.is_verified
-            ? "Cena polnjenja temelji na znani tarifi, vseeno pred polnjenjem preveri točen cenik pri ponudniku."
-            : item.tariff_note ||
-              "EV cena je referenčna ocena za državo in tip polnjenja. Dejanska tarifa se lahko razlikuje glede na ponudnika, aplikacijo ali roaming kartico."
-          : "Izračun je ocena poti do črpalke. Google Maps lahko pokaže drugačen čas zaradi prometa ali prehoda meje."}
+            ? tr(lang, "evVerifiedNote")
+            : item.tariff_note || tr(lang, "evEstimatedNote")
+          : tr(lang, "fuelMapsNote")}
       </p>
     </div>
   );
@@ -3716,15 +3782,17 @@ function BrandMultiSelect({
 }
 
 function SelectDark({
+  lang,
   label,
   value,
   onChange,
   options,
 }: {
+  lang: Lang;
   label: string;
   value: string;
   onChange: (value: string) => void;
-  options: string[][];
+  options: readonly (readonly [string, string])[];
 }) {
   return (
     <label>
@@ -3738,7 +3806,9 @@ function SelectDark({
       >
         {options.map(([value, label]) => (
           <option key={value} value={value} className="bg-[#071a12] text-white">
-            {label}
+            {label in TEXT[lang]
+              ? tr(lang, label as keyof typeof TEXT.sl)
+              : label}
           </option>
         ))}
       </select>
