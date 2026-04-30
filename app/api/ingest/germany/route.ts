@@ -6,10 +6,10 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const maxDuration = 60;
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const INGEST_SECRET = process.env.INGEST_SECRET!;
-const TANKERKOENIG_API_KEY = process.env.TANKERKOENIG_API_KEY!;
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+const INGEST_SECRET = process.env.INGEST_SECRET ?? "";
+const TANKERKOENIG_API_KEY = process.env.TANKERKOENIG_API_KEY ?? "";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -38,10 +38,6 @@ type TankerkoenigResponse = {
   message?: string;
 };
 
-// Conservative Germany grid.
-// Tankerkönig max radius is 25km, therefore radius=25.
-// This is intentionally not the whole country in one request.
-// Use offset + limit from cron/admin to crawl gradually.
 const GERMANY_GRID: Array<{ lat: number; lng: number; label: string }> = [
   { label: "DE-Berlin", lat: 52.52, lng: 13.405 },
   { label: "DE-Hamburg", lat: 53.5511, lng: 9.9937 },
@@ -114,16 +110,19 @@ function toNumber(value: unknown): number | null {
 function normalizeFuelType(type: FuelType) {
   switch (type) {
     case "diesel":
-      return "DIE";
+      return "DIESEL";
     case "e5":
-      return "SUP_E5";
+      return "PETROL_95";
     case "e10":
-      return "SUP_E10";
+      return "PETROL_E10";
   }
 }
 
 function buildAddress(station: TankerkoenigStation) {
-  return [station.street, station.houseNumber].filter(Boolean).join(" ").trim() || null;
+  return (
+    [station.street, station.houseNumber].filter(Boolean).join(" ").trim() ||
+    null
+  );
 }
 
 function isValidPrice(price: unknown) {
@@ -131,7 +130,7 @@ function isValidPrice(price: unknown) {
   return Number.isFinite(n) && n > 0 && n < 5;
 }
 
-async function fetchTankerkonigStations(params: {
+async function fetchTankerkoenigStations(params: {
   lat: number;
   lng: number;
   radiusKm: number;
@@ -158,7 +157,9 @@ async function fetchTankerkonigStations(params: {
 
   if (!res.ok || !json.ok) {
     throw new Error(
-      `Tankerkönig API error: status=${res.status}, message=${json.message ?? json.data ?? "unknown"}`,
+      `Tankerkönig API error: status=${res.status}, message=${
+        json.message ?? json.data ?? "unknown"
+      }`,
     );
   }
 
@@ -196,45 +197,52 @@ export async function GET(req: NextRequest) {
 
   try {
     if (authFailed(req)) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json(
+        { success: false, error: "Unauthorized" },
+        { status: 401 },
+      );
     }
 
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  return NextResponse.json(
-    {
-      success: false,
-      error:
-        "Missing env vars. Required: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY",
-    },
-    { status: 500 },
-  );
-}
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Missing env vars. Required: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY",
+        },
+        { status: 500 },
+      );
+    }
 
-if (!TANKERKOENIG_API_KEY) {
-  return NextResponse.json({
-    success: true,
-    source: "tankerkoenig",
-    country: "DE",
-    ready: false,
-    skipped: true,
-    reason: "TANKERKOENIG_API_KEY is not configured yet",
-    startedAt,
-    finishedAt: new Date().toISOString(),
-  });
-}
+    if (!TANKERKOENIG_API_KEY) {
+      return NextResponse.json({
+        success: true,
+        source: "tankerkoenig",
+        country: "DE",
+        ready: false,
+        skipped: true,
+        reason: "TANKERKOENIG_API_KEY is not configured yet",
+        startedAt,
+        finishedAt: new Date().toISOString(),
+      });
+    }
 
     const searchParams = req.nextUrl.searchParams;
 
     const radiusKm = Math.min(Number(searchParams.get("radius") ?? 25), 25);
     const offset = Math.max(Number(searchParams.get("offset") ?? 0), 0);
-    const limit = Math.min(Math.max(Number(searchParams.get("limit") ?? 3), 1), 10);
+    const limit = Math.min(
+      Math.max(Number(searchParams.get("limit") ?? 3), 1),
+      10,
+    );
     const ttlMinutes = Math.max(Number(searchParams.get("ttl") ?? 360), 30);
-    const delayMs = Math.max(Number(searchParams.get("delayMs") ?? 61000), 0);
+    const delayMs = Math.max(Number(searchParams.get("delayMs") ?? 0), 0);
 
     const requestedFuel = searchParams.get("fuel") as FuelType | null;
-    const fuelTypes = requestedFuel && FUEL_TYPES.includes(requestedFuel)
-      ? [requestedFuel]
-      : FUEL_TYPES;
+    const fuelTypes =
+      requestedFuel && FUEL_TYPES.includes(requestedFuel)
+        ? [requestedFuel]
+        : FUEL_TYPES;
 
     const selectedGrid = GERMANY_GRID.slice(offset, offset + limit);
 
@@ -244,7 +252,8 @@ if (!TANKERKOENIG_API_KEY) {
     let locationsUpserted = 0;
     let pricesInserted = 0;
 
-    const errors: Array<{ label: string; fuelType: string; error: string }> = [];
+    const errors: Array<{ label: string; fuelType: string; error: string }> =
+      [];
 
     for (const point of selectedGrid) {
       for (const fuelType of fuelTypes) {
@@ -257,7 +266,7 @@ if (!TANKERKOENIG_API_KEY) {
         }
 
         try {
-          const stations = await fetchTankerkonigStations({
+          const stations = await fetchTankerkoenigStations({
             lat: point.lat,
             lng: point.lng,
             radiusKm,
@@ -267,55 +276,107 @@ if (!TANKERKOENIG_API_KEY) {
           apiCalls += 1;
           stationsFound += stations.length;
 
+          const sourceIds = stations
+            .filter((station) => station.id)
+            .map((station) => String(station.id));
+
+          const now = new Date().toISOString();
+
           const locationRows = stations
-            .filter((station) => station.id && Number.isFinite(station.lat) && Number.isFinite(station.lng))
+            .filter(
+              (station) =>
+                station.id &&
+                Number.isFinite(station.lat) &&
+                Number.isFinite(station.lng),
+            )
             .map((station) => ({
-              external_id: `tankerkoenig:${station.id}`,
-              source: "tankerkoenig",
-              country_code: "DE",
               type: "fuel_station",
               name: station.name || station.brand || "Tankstelle",
               brand: station.brand || null,
+              operator: station.brand || null,
               address: buildAddress(station),
               city: station.place || null,
-              postal_code: station.postCode ? String(station.postCode) : null,
+              country_code: "DE",
               lat: station.lat,
               lng: station.lng,
+              geo: `POINT(${station.lng} ${station.lat})`,
+              source: "tankerkoenig",
+              source_id: String(station.id),
               is_active: true,
-              raw: station,
-              updated_at: new Date().toISOString(),
+              metadata: {
+                post_code: station.postCode ? String(station.postCode) : null,
+                dist: station.dist ?? null,
+                is_open: station.isOpen ?? null,
+                tankerkoenig: station,
+              },
+              updated_at: now,
             }));
 
           if (locationRows.length > 0) {
             const { error: locationError } = await supabase
               .from("locations")
-              .upsert(locationRows, { onConflict: "external_id" });
+              .upsert(locationRows, { onConflict: "source,source_id" });
 
             if (locationError) throw locationError;
 
             locationsUpserted += locationRows.length;
           }
 
+          if (sourceIds.length === 0) {
+            await touchCache(cacheKey, {
+              point,
+              fuelType,
+              radiusKm,
+              stationsFound: stations.length,
+              note: "No valid source IDs returned",
+            });
+            continue;
+          }
+
+          const { data: locationRowsFromDb, error: locationReadError } =
+            await supabase
+              .from("locations")
+              .select("id,source_id")
+              .eq("source", "tankerkoenig")
+              .eq("country_code", "DE")
+              .in("source_id", sourceIds);
+
+          if (locationReadError) throw locationReadError;
+
+          const locationIdBySourceId = new Map(
+            (locationRowsFromDb || []).map((row) => [
+              String(row.source_id),
+              row.id,
+            ]),
+          );
+
           const priceRows = stations
             .filter((station) => station.id && isValidPrice(station.price))
-            .map((station) => ({
-              external_location_id: `tankerkoenig:${station.id}`,
-              source: "tankerkoenig",
-              country_code: "DE",
-              fuel_type: normalizeFuelType(fuelType),
-              price: toNumber(station.price),
-              currency: "EUR",
-              is_available: station.isOpen ?? true,
-              captured_at: new Date().toISOString(),
-              raw: {
-                station_id: station.id,
-                grid_label: point.label,
-                tankerkoenig_fuel_type: fuelType,
-              },
-            }));
+            .map((station) => {
+              const locationId = locationIdBySourceId.get(String(station.id));
+              if (!locationId) return null;
+
+              return {
+                location_id: locationId,
+                fuel_type: normalizeFuelType(fuelType),
+                price: toNumber(station.price),
+                currency: "EUR",
+                source: "tankerkoenig",
+                confidence: "official",
+                raw_product_name: fuelType,
+                source_updated_at: now,
+                captured_at: now,
+              };
+            })
+            .filter((row): row is NonNullable<typeof row> => row !== null);
 
           if (priceRows.length > 0) {
-            const { error: priceError } = await supabase.from("fuel_prices").insert(priceRows);
+            const { error: priceError } = await supabase
+              .from("fuel_prices")
+              .upsert(priceRows, {
+                onConflict: "location_id,fuel_type,source",
+              });
+
             if (priceError) throw priceError;
 
             pricesInserted += priceRows.length;
@@ -326,6 +387,8 @@ if (!TANKERKOENIG_API_KEY) {
             fuelType,
             radiusKm,
             stationsFound: stations.length,
+            locationsUpserted: locationRows.length,
+            pricesInserted: priceRows.length,
           });
 
           if (delayMs > 0) {
@@ -360,7 +423,7 @@ if (!TANKERKOENIG_API_KEY) {
       pricesInserted,
       errors,
       attribution:
-        "Fuel price data from Tankerkönig / MTS-K under CC BY 4.0. API usage must respect Tankerkönig terms.",
+        "Fuel price data from Tankerkönig / MTS-K. Respect Tankerkönig API terms and MTS-K data usage rules.",
     });
   } catch (error) {
     return NextResponse.json(
