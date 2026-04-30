@@ -29,6 +29,9 @@ type TankerkoenigStation = {
   lng: number;
   dist?: number;
   price?: number | null;
+  e5?: number | null;
+  e10?: number | null;
+  diesel?: number | null;
   isOpen?: boolean;
 };
 
@@ -132,6 +135,13 @@ function isValidPrice(price: unknown) {
   return Number.isFinite(n) && n > 0 && n < 5;
 }
 
+function getStationPrice(station: TankerkoenigStation, fuelType: FuelType) {
+  if (fuelType === "diesel") return toNumber(station.diesel ?? station.price);
+  if (fuelType === "e5") return toNumber(station.e5 ?? station.price);
+  if (fuelType === "e10") return toNumber(station.e10 ?? station.price);
+  return null;
+}
+
 async function fetchTankerkoenigStations(params: {
   lat: number;
   lng: number;
@@ -143,7 +153,7 @@ async function fetchTankerkoenigStations(params: {
   url.searchParams.set("lng", String(params.lng));
   url.searchParams.set("rad", String(params.radiusKm));
   url.searchParams.set("sort", "dist");
-  url.searchParams.set("type", params.fuelType);
+  url.searchParams.set("type", "all");
   url.searchParams.set("apikey", TANKERKOENIG_API_KEY);
 
   const res = await fetch(url.toString(), {
@@ -161,7 +171,7 @@ async function fetchTankerkoenigStations(params: {
     throw new Error(
       `Tankerkönig API error: status=${res.status}, message=${
         json.message ?? json.data ?? "unknown"
-      }`,
+      }`
     );
   }
 
@@ -190,7 +200,7 @@ async function touchCache(cacheKey: string, payload: Record<string, unknown>) {
       payload,
       updated_at: new Date().toISOString(),
     },
-    { onConflict: "cache_key" },
+    { onConflict: "cache_key" }
   );
 }
 
@@ -201,7 +211,7 @@ export async function GET(req: NextRequest) {
     if (authFailed(req)) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
-        { status: 401 },
+        { status: 401 }
       );
     }
 
@@ -212,7 +222,7 @@ export async function GET(req: NextRequest) {
           error:
             "Missing env vars. Required: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY",
         },
-        { status: 500 },
+        { status: 500 }
       );
     }
 
@@ -235,7 +245,7 @@ export async function GET(req: NextRequest) {
     const offset = Math.max(Number(searchParams.get("offset") ?? 0), 0);
     const limit = Math.min(
       Math.max(Number(searchParams.get("limit") ?? 3), 1),
-      10,
+      10
     );
     const ttlMinutes = Math.max(Number(searchParams.get("ttl") ?? 360), 30);
     const delayMs = Math.max(Number(searchParams.get("delayMs") ?? 0), 0);
@@ -289,16 +299,16 @@ export async function GET(req: NextRequest) {
               (station) =>
                 station.id &&
                 Number.isFinite(station.lat) &&
-                Number.isFinite(station.lng),
+                Number.isFinite(station.lng)
             )
             .map((station) => ({
               type: "fuel_station",
               name: station.name || station.brand || "Tankstelle",
               brand: getCanonicalBrand(
-                `${station.brand || ""} ${station.name || ""}`,
+                `${station.brand || ""} ${station.name || ""}`
               ),
               operator: getCanonicalBrand(
-                `${station.brand || ""} ${station.name || ""}`,
+                `${station.brand || ""} ${station.name || ""}`
               ),
               address: buildAddress(station),
               city: station.place || null,
@@ -353,19 +363,20 @@ export async function GET(req: NextRequest) {
             (locationRowsFromDb || []).map((row) => [
               String(row.source_id),
               row.id,
-            ]),
+            ])
           );
 
           const priceRows = stations
-            .filter((station) => station.id && isValidPrice(station.price))
             .map((station) => {
               const locationId = locationIdBySourceId.get(String(station.id));
-              if (!locationId) return null;
+              const price = getStationPrice(station, fuelType);
+
+              if (!locationId || !isValidPrice(price)) return null;
 
               return {
                 location_id: locationId,
                 fuel_type: normalizeFuelType(fuelType),
-                price: toNumber(station.price),
+                price,
                 currency: "EUR",
                 source: "tankerkoenig",
                 confidence: "official",
@@ -441,7 +452,7 @@ export async function GET(req: NextRequest) {
         finishedAt: new Date().toISOString(),
         error: error instanceof Error ? error.message : String(error),
       },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }
