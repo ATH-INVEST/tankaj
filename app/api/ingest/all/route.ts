@@ -162,6 +162,16 @@ export async function GET(req: NextRequest) {
       handler: ingestAustria,
     },
     {
+      label: "austria-prices-sup-0",
+      path: "/api/ingest/austria-prices?fuel=SUP&limit=180&offset=0",
+      handler: ingestAustriaPrices,
+    },
+    {
+      label: "austria-prices-die-0",
+      path: "/api/ingest/austria-prices?fuel=DIE&limit=180&offset=0",
+      handler: ingestAustriaPrices,
+    },
+    {
       label: "austria-prices-sup-180",
       path: "/api/ingest/austria-prices?fuel=SUP&limit=180&offset=180",
       handler: ingestAustriaPrices,
@@ -181,11 +191,11 @@ export async function GET(req: NextRequest) {
       path: "/api/ingest/austria-prices?fuel=DIE&limit=180&offset=360",
       handler: ingestAustriaPrices,
     },
-{
-  label: "Germany fuel prices",
-  path: "/api/ingest/germany?limit=1&fuel=diesel",
-  handler: ingestGermany,
-},
+    {
+      label: "germany-diesel",
+      path: "/api/ingest/germany?limit=1&fuel=diesel&delayMs=0",
+      handler: ingestGermany,
+    },
     {
       label: "ev-locations",
       path: "/api/ingest/ev",

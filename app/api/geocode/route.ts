@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const COUNTRY_CODES = "si,hr,at,it";
+const COUNTRY_CODES = "si,hr,at,it,de";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);

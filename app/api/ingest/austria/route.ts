@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase-admin";
+import { getCanonicalBrand } from "@/lib/normalizeBrand";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

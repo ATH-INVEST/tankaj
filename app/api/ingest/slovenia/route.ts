@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase-admin";
+import { getCanonicalBrand } from "@/lib/normalizeBrand";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -98,8 +99,8 @@ async function fetchAllGorivaPages(): Promise<GorivaStation[]> {
 }
 
 function buildLocationPayload(station: GorivaStation) {
-  const brand = station.name.split(" ")[0] || null;
-
+  const brand =
+    getCanonicalBrand(station.name) || station.name.split(" ")[0] || null;
   return {
     type: "fuel_station",
     name: station.name,

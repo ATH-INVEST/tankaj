@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getCanonicalBrand } from "@/lib/normalizeBrand";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,7 +9,8 @@ export const maxDuration = 60;
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
-const INGEST_SECRET = process.env.INGEST_SECRET ?? "";
+const INGEST_SECRET =
+  process.env.INGEST_SECRET || process.env.CRON_SECRET || "";
 const TANKERKOENIG_API_KEY = process.env.TANKERKOENIG_API_KEY ?? "";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -292,8 +294,12 @@ export async function GET(req: NextRequest) {
             .map((station) => ({
               type: "fuel_station",
               name: station.name || station.brand || "Tankstelle",
-              brand: station.brand || null,
-              operator: station.brand || null,
+              brand: getCanonicalBrand(
+                `${station.brand || ""} ${station.name || ""}`,
+              ),
+              operator: getCanonicalBrand(
+                `${station.brand || ""} ${station.name || ""}`,
+              ),
               address: buildAddress(station),
               city: station.place || null,
               country_code: "DE",
