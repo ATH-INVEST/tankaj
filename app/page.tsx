@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { trackEvent } from "@/lib/analytics";
 
+type Lang = "sl" | "en";
+type Theme = "dark" | "light";
 type SearchMode = "fuel" | "ev";
 type SearchStatus = "idle" | "location" | "routing" | "done" | "error";
 type SortBy = "smart" | "price" | "distance";
@@ -85,6 +87,189 @@ type Preferences = {
 };
 
 const STORAGE_KEY = "tankaj_preferences_v2";
+const LANG_STORAGE_KEY = "tankaj_lang";
+const THEME_STORAGE_KEY = "tankaj_theme";
+
+const TEXT = {
+  sl: {
+    countries: "Slovenija, Hrvaška, Avstrija, Italija",
+    heroTitle: "Ne tankaj več na pamet.",
+    heroText:
+      "Odpri app, dovoli lokacijo in Tankaj.si sam izračuna najboljšo izbiro. Zdaj podpira goriva in EV polnilnice — z realno potjo, časom in oceno skupnega stroška.",
+    hideManual: "Skrij ročni vnos",
+    showManual: "Vnesi lokacijo ročno",
+    locationSearchLabel: "Lokacija za iskanje",
+    locationPlaceholder: "Npr. Ljubljana, Koper, Zagreb ...",
+    use: "Uporabi",
+    searchingLocation: "Iščem lokacijo ...",
+    manualHelp:
+      "Uporabno, če imaš sledenje lokacije izklopljeno. Iskanje bo uporabljalo izbrano lokacijo namesto GPS-a.",
+    fuel: "Goriva",
+    evChargers: "EV polnilnice",
+    fuelLabel: "Gorivo",
+    petrol95: "Bencin 95",
+    diesel: "Dizel",
+    radius: "Radius",
+    amount: "Količina",
+    brands: "Znamke",
+    providers: "Ponudniki",
+    advanced: "Napredne nastavitve",
+    chargeAmount: "Količina polnjenja",
+    carConsumption: "Poraba vozila",
+    acPower: "AC moč",
+    minPower: "Min. moč",
+    allAc: "Vse AC",
+    allPowers: "Vse moči",
+    country: "Država",
+    getLocation: "Pridobivam lokacijo ...",
+    calcEv: "Računam EV polnilnice ...",
+    calcRoutes: "Računam realne poti ...",
+    findEv: "Poišči najboljšo EV polnilnico",
+    refreshBest: "Osveži najboljšo izbiro",
+    energy: "Energija",
+    fuelCost: "Gorivo",
+    route: "Pot",
+    time: "Čas",
+    priceTimesKwh: "Cena × kWh",
+    priceTimesAmount: "Cena × količina",
+    realDrive: "Realna vožnja",
+    defaultHour: "Privzeto 12 €/h",
+    settingsNote:
+      "Nastavitve si zapomnimo na tej napravi. EV cene so označene kot preverjene ali ocenjene glede na vir podatkov. Cene s paketom so označene z zvezdico in se uporabijo samo, če paket obkljukaš.",
+    recommended: "Priporočeno",
+    cheapestLiter: "Najcenejše €/L",
+    cheapestKwh: "Najcenejše €/kWh",
+    nearest: "Najbližje",
+    moreEv: "Več EV polnilnic",
+    otherOptions: "Druge odlične možnosti",
+    prices: "Cene",
+    loadingMore: "Računam dodatne možnosti ...",
+    showMoreEv: "Prikaži več EV polnilnic",
+    showOtherOptions: "Prikaži druge odlične možnosti",
+    loadMoreEv: "Naloži več EV polnilnic",
+    loadMore5: "Naloži še 5 možnosti",
+    allEvShown: "Prikazane so vse izračunane EV polnilnice",
+    allShown: "Prikazane so vse izračunane možnosti",
+    automaticCalc: "Samodejni izračun",
+    allowLocationTitle: "Dovoli lokacijo in rezultat se izračuna sam.",
+    location: "Lokacija",
+    closestRoutes: "najbližje realne poti",
+    parameters: "Parametri",
+    paramsText: "gorivo ali EV, radij, količina",
+    result: "Rezultat",
+    resultText: "ena najboljša izbira + alternative",
+    howWorks: "Kako deluje?",
+    howWorksText:
+      "Tankaj.si samodejno izračuna realne poti do črpalk in EV polnilnic v izbranem radiju. Pri gorivu primerja ceno na liter, pri EV pa ceno na kWh, moč polnilnice, pot in čas. Uporabnik lahko sam določi, ali se pri skupnem strošku upoštevajo energija, pot in čas.",
+    formula: "Formula",
+    formulaText: "energija + pot + čas",
+    radiusText: "Vedno upoštevamo tvoj izbor",
+    autoText: "Zadnje nastavitve si zapomnimo",
+    evPriceNotes: "Opombe o EV cenah",
+    evPriceNotes1:
+      "Pri EV polnilnicah najprej uporabljamo preverjene tarife, kjer so javno dostopne. Kjer točne tarife niso javno objavljene, uporabimo referenčno oceno po državi in tipu polnjenja (AC/DC).",
+    evPriceNotes2:
+      "Referenčni viri vključujejo javne cenike večjih ponudnikov, kot so Petrol, Gremo na elektriko, MOL Plugee, Smatrics, Enel X Way, IONITY in drugi. Dejanska cena se lahko razlikuje glede na aplikacijo, naročnino ali roaming kartico.",
+    language: "SL",
+    themeLight: "Svetla",
+    themeDark: "Temna",
+    footerAuthor: "Avtor",
+    footerCopyright: "© 2026 Tankaj.si",
+    footerContact: "Kontakt na LinkedIn",
+  },
+  en: {
+    countries: "Slovenia, Croatia, Austria, Italy",
+    heroTitle: "Don’t fuel blindly.",
+    heroText:
+      "Open the app, allow location and Tankaj.si calculates the best option for you. It now supports fuel and EV chargers — with real routes, time and estimated total cost.",
+    hideManual: "Hide manual entry",
+    showManual: "Enter location manually",
+    locationSearchLabel: "Search location",
+    locationPlaceholder: "E.g. Ljubljana, Koper, Zagreb ...",
+    use: "Use",
+    searchingLocation: "Searching location ...",
+    manualHelp:
+      "Useful when location tracking is off. Search will use the selected place instead of GPS.",
+    fuel: "Fuel",
+    evChargers: "EV chargers",
+    fuelLabel: "Fuel",
+    petrol95: "Petrol 95",
+    diesel: "Diesel",
+    radius: "Radius",
+    amount: "Amount",
+    brands: "Brands",
+    providers: "Providers",
+    advanced: "Advanced settings",
+    chargeAmount: "Charging amount",
+    carConsumption: "Car consumption",
+    acPower: "AC power",
+    minPower: "Min. power",
+    allAc: "All AC",
+    allPowers: "All powers",
+    country: "Country",
+    getLocation: "Getting location ...",
+    calcEv: "Calculating EV chargers ...",
+    calcRoutes: "Calculating real routes ...",
+    findEv: "Find the best EV charger",
+    refreshBest: "Refresh best option",
+    energy: "Energy",
+    fuelCost: "Fuel",
+    route: "Route",
+    time: "Time",
+    priceTimesKwh: "Price × kWh",
+    priceTimesAmount: "Price × amount",
+    realDrive: "Real drive",
+    defaultHour: "Default 12 €/h",
+    settingsNote:
+      "Settings are remembered on this device. EV prices are marked as verified or estimated depending on the data source. Package prices are marked with an asterisk and are only used when enabled.",
+    recommended: "Recommended",
+    cheapestLiter: "Cheapest €/L",
+    cheapestKwh: "Cheapest €/kWh",
+    nearest: "Nearest",
+    moreEv: "More EV chargers",
+    otherOptions: "Other great options",
+    prices: "Prices",
+    loadingMore: "Calculating more options ...",
+    showMoreEv: "Show more EV chargers",
+    showOtherOptions: "Show other great options",
+    loadMoreEv: "Load more EV chargers",
+    loadMore5: "Load 5 more options",
+    allEvShown: "All calculated EV chargers are shown",
+    allShown: "All calculated options are shown",
+    automaticCalc: "Automatic calculation",
+    allowLocationTitle:
+      "Allow location and the result is calculated automatically.",
+    location: "Location",
+    closestRoutes: "nearest real routes",
+    parameters: "Parameters",
+    paramsText: "fuel or EV, radius, amount",
+    result: "Result",
+    resultText: "one best option + alternatives",
+    howWorks: "How it works",
+    howWorksText:
+      "Tankaj.si automatically calculates real routes to fuel stations and EV chargers in the selected radius. For fuel it compares price per litre; for EV it compares price per kWh, charger power, route and time. You can choose whether energy, route and time are included in the total cost.",
+    formula: "Formula",
+    formulaText: "energy + route + time",
+    radiusText: "Your selected radius is always respected",
+    autoText: "Last settings are remembered",
+    evPriceNotes: "Notes about EV prices",
+    evPriceNotes1:
+      "For EV chargers we use verified tariffs first where they are publicly available. Where exact tariffs are not public, we use a reference estimate by country and charging type (AC/DC).",
+    evPriceNotes2:
+      "Reference sources include public price lists from major providers such as Petrol, Gremo na elektriko, MOL Plugee, Smatrics, Enel X Way, IONITY and others. The actual price may differ depending on app, subscription or roaming card.",
+    language: "EN",
+    themeLight: "Light",
+    themeDark: "Dark",
+    footerAuthor: "Author",
+    footerCopyright: "© 2026 Tankaj.si",
+    footerContact: "Contact on LinkedIn",
+  },
+} satisfies Record<Lang, Record<string, string>>;
+
+function tr(lang: Lang | undefined, key: keyof typeof TEXT.sl) {
+  const dictionary = lang && TEXT[lang] ? TEXT[lang] : TEXT.sl;
+  return dictionary[key] || TEXT.sl[key] || String(key);
+}
 
 const SORT_OPTIONS_FUEL: [SortBy, string][] = [
   ["smart", "Priporočeno"],
@@ -533,6 +718,8 @@ function buildCrossBorderInsight(
 }
 
 export default function Home() {
+  const [lang, setLang] = useState<Lang>("sl");
+  const [theme, setTheme] = useState<Theme>("dark");
   const [mode, setMode] = useState<SearchMode>("fuel");
   const [fuelType, setFuelType] = useState("PETROL_95");
   const [radius, setRadius] = useState(25);
@@ -587,6 +774,31 @@ export default function Home() {
   const didAutoLocate = useRef(false);
 
   const loading = status === "location" || status === "routing";
+
+  useEffect(() => {
+    try {
+      const savedLang = window.localStorage.getItem(LANG_STORAGE_KEY);
+      const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+
+      if (savedLang === "sl" || savedLang === "en") setLang(savedLang);
+      if (savedTheme === "dark" || savedTheme === "light") setTheme(savedTheme);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(LANG_STORAGE_KEY, lang);
+      document.documentElement.lang = lang;
+    } catch {}
+  }, [lang]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+      document.documentElement.classList.toggle("light", theme === "light");
+      document.documentElement.classList.toggle("dark", theme === "dark");
+    } catch {}
+  }, [theme]);
 
   useEffect(() => {
     try {
@@ -1182,25 +1394,852 @@ export default function Home() {
   return (
     <main
       id="top"
-      className="relative min-h-dvh w-full max-w-[100svw] overflow-x-clip bg-[#06140f] pb-[calc(7rem+env(safe-area-inset-bottom))] text-white md:pb-0"
+      className={`relative min-h-dvh w-full max-w-[100svw] overflow-x-clip pb-[calc(7rem+env(safe-area-inset-bottom))] md:pb-0 ${theme === "light" ? "bg-[#f6f4ec] text-[#071a12]" : "bg-[#06140f] text-white"}`}
     >
       <style jsx global>{`
+        :root {
+          color-scheme: dark;
+        }
+        html.light {
+          color-scheme: light;
+        }
+
         html,
         body {
           max-width: 100%;
           overflow-x: hidden;
           overscroll-behavior-x: none;
         }
+
+        body {
+          -webkit-font-smoothing: antialiased;
+          text-rendering: geometricPrecision;
+        }
+
         #top,
         #top * {
           box-sizing: border-box;
         }
-      `}</style>
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(185,251,106,.23),transparent_28%),radial-gradient(circle_at_92%_12%,rgba(44,120,76,.24),transparent_34%),linear-gradient(180deg,#071a12_0%,#04100b_100%)]" />
+        #top button,
+        #top input,
+        #top select {
+          -webkit-tap-highlight-color: transparent;
+        }
 
-      <section className="relative mx-auto flex min-h-dvh w-full max-w-[1320px] min-w-0 flex-col px-3 py-3 sm:px-6 lg:px-8 lg:py-7">
+        #top button:focus-visible,
+        #top a:focus-visible,
+        #top input:focus-visible,
+        #top select:focus-visible {
+          outline: 3px solid rgba(185, 251, 106, 0.55);
+          outline-offset: 3px;
+        }
+
+        html.light body {
+          background: #f4f6ef;
+        }
+
+        html.light #top {
+          background: #f4f6ef !important;
+          color: #071a12 !important;
+        }
+
+        html.light #top > .pointer-events-none.fixed {
+          background:
+            radial-gradient(
+              circle at 12% 0%,
+              rgba(185, 251, 106, 0.24),
+              transparent 28%
+            ),
+            radial-gradient(
+              circle at 90% 5%,
+              rgba(57, 116, 77, 0.14),
+              transparent 32%
+            ),
+            linear-gradient(180deg, #f7faee 0%, #f2f1e8 48%, #ece8dc 100%) !important;
+        }
+
+        html.light #top [class*="rounded-[30px]"],
+        html.light #top [class*="rounded-[28px]"],
+        html.light #top [class*="rounded-[26px]"],
+        html.light #top [class*="rounded-[24px]"],
+        html.light #top [class*="rounded-3xl"] {
+          border-color: rgba(15, 31, 22, 0.09) !important;
+          box-shadow: 0 24px 70px rgba(32, 45, 37, 0.1) !important;
+        }
+
+        html.light #top [class*="bg-white/["],
+        html.light #top [class*="bg-white/"],
+        html.light #top [class*="bg-[#123024]"],
+        html.light #top [class*="bg-[#071a12]"],
+        html.light #top [class*="bg-black/"],
+        html.light #top [class*="bg-[radial-gradient"] {
+          background: rgba(255, 255, 255, 0.88) !important;
+          backdrop-filter: blur(22px) saturate(160%);
+        }
+
+        html.light #top [class*="bg-[#071a12]/62"],
+        html.light #top [class*="bg-[#071a12]/55"],
+        html.light #top [class*="bg-[#123024]/72"],
+        html.light #top [class*="bg-black/15"],
+        html.light #top [class*="bg-black/25"],
+        html.light #top [class*="bg-black/30"] {
+          background: #ffffff !important;
+        }
+
+        html.light #top [class*="border-white"] {
+          border-color: rgba(7, 26, 18, 0.1) !important;
+        }
+
+        html.light #top [class*="text-white"],
+        html.light #top [class*="text-zinc"],
+        html.light #top [class*="text-neutral"],
+        html.light #top [class*="text-slate"] {
+          color: rgba(7, 26, 18, 0.66) !important;
+        }
+
+        html.light #top h1,
+        html.light #top h2,
+        html.light #top h3,
+        html.light #top strong,
+        html.light #top [class~="text-white"],
+        html.light #top [class*="font-black"] {
+          color: #071a12 !important;
+        }
+
+        html.light #top [class*="text-white/80"],
+        html.light #top [class*="text-white/75"],
+        html.light #top [class*="text-white/72"],
+        html.light #top [class*="text-white/70"],
+        html.light #top [class*="text-white/65"],
+        html.light #top [class*="text-white/60"] {
+          color: rgba(7, 26, 18, 0.72) !important;
+        }
+
+        html.light #top [class*="text-white/55"],
+        html.light #top [class*="text-white/45"],
+        html.light #top [class*="text-white/40"],
+        html.light #top [class*="text-white/38"],
+        html.light #top [class*="text-white/35"],
+        html.light #top [class*="text-white/30"] {
+          color: rgba(7, 26, 18, 0.46) !important;
+        }
+
+        html.light #top [class*="text-[#b9fb6a]"] {
+          color: #4f8f18 !important;
+        }
+
+        html.light #top [class*="bg-[#b9fb6a]"] {
+          background-color: #a8f451 !important;
+          color: #06170f !important;
+          box-shadow: 0 12px 30px rgba(106, 169, 31, 0.18) !important;
+        }
+
+        html.light #top [class*="bg-[#b9fb6a]/"],
+        html.light #top [class*="bg-[#b9fb6a]/18"],
+        html.light #top [class*="bg-[#b9fb6a]/14"],
+        html.light #top [class*="bg-[#b9fb6a]/12"],
+        html.light #top [class*="bg-[#b9fb6a]/10"] {
+          background-color: rgba(168, 244, 81, 0.16) !important;
+        }
+
+        html.light #top input,
+        html.light #top select {
+          background: #f8faf5 !important;
+          border: 1px solid rgba(7, 26, 18, 0.11) !important;
+          color: #071a12 !important;
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
+        }
+
+        html.light #top input::placeholder {
+          color: rgba(7, 26, 18, 0.36) !important;
+        }
+
+        html.light select option {
+          color: #071a12;
+          background: #ffffff;
+        }
+
+        html.light #top [class*="hover:bg-white"]:hover {
+          background-color: rgba(7, 26, 18, 0.045) !important;
+        }
+
+         
+
+        html.light #top [class*="shadow-[0_25px_80px"] {
+          box-shadow: 0 34px 90px rgba(32, 45, 37, 0.13) !important;
+        }
+
+        html.light #top [class*="tracking-[.28em]"],
+        html.light #top [class*="tracking-[.2em]"] {
+          color: #5c961f !important;
+        }
+
+        html.light #top .line-clamp-2 {
+          color: rgba(7, 26, 18, 0.48) !important;
+        }
+
+        /* 2026 iOS polish pass */
+        #top {
+          font-family:
+            Inter,
+            ui-sans-serif,
+            system-ui,
+            -apple-system,
+            BlinkMacSystemFont,
+            "SF Pro Display",
+            "SF Pro Text",
+            "Segoe UI",
+            sans-serif;
+        }
+
+        #top > section > div.grid {
+          align-items: stretch;
+          margin-inline: auto;
+        }
+
+        #top input,
+        #top select {
+          min-height: 58px;
+          border-radius: 18px !important;
+        }
+
+        html.light #top {
+          background: #f7f8f3 !important;
+        }
+
+        html.light #top > .pointer-events-none.fixed {
+          background:
+            radial-gradient(
+              circle at 13% 2%,
+              rgba(185, 251, 106, 0.22),
+              transparent 31%
+            ),
+            radial-gradient(
+              circle at 82% 8%,
+              rgba(65, 121, 82, 0.1),
+              transparent 33%
+            ),
+            radial-gradient(
+              circle at 50% 105%,
+              rgba(214, 205, 181, 0.34),
+              transparent 44%
+            ),
+            linear-gradient(180deg, #fafcf5 0%, #f5f6ef 50%, #ece9df 100%) !important;
+        }
+
+        html.light #top > section > div.grid > div,
+        html.light #how-it-works,
+        html.light #app-footer {
+          background: rgba(255, 255, 255, 0.92) !important;
+          border: 1px solid rgba(12, 26, 18, 0.075) !important;
+          box-shadow:
+            0 26px 70px rgba(24, 35, 28, 0.105),
+            0 1px 0 rgba(255, 255, 255, 0.78) inset !important;
+          backdrop-filter: blur(26px) saturate(165%);
+        }
+
+        html.light #top h1,
+        html.light #top h2,
+        html.light #top h3 {
+          color: #071a12 !important;
+        }
+
+        html.light #top p,
+        html.light #top label,
+        html.light #top small {
+          color: rgba(7, 26, 18, 0.62) !important;
+        }
+
+        html.light #top input,
+        html.light #top select {
+          background: #ffffff !important;
+          border: 1px solid rgba(7, 26, 18, 0.1) !important;
+          color: #071a12 !important;
+          box-shadow:
+            0 1px 0 rgba(255, 255, 255, 0.95) inset,
+            0 10px 24px rgba(32, 45, 37, 0.035) !important;
+        }
+
+        html.light #top input:hover,
+        html.light #top select:hover {
+          border-color: rgba(87, 145, 39, 0.24) !important;
+        }
+
+        html.light #top input:focus,
+        html.light #top select:focus {
+          border-color: rgba(137, 230, 52, 0.92) !important;
+          box-shadow:
+            0 0 0 4px rgba(185, 251, 106, 0.26),
+            0 12px 28px rgba(69, 122, 37, 0.08) !important;
+        }
+
+        html.light #top input::placeholder {
+          color: rgba(7, 26, 18, 0.35) !important;
+        }
+
+        html.light #top [class*="bg-black/15"],
+        html.light #top [class*="bg-black/20"],
+        html.light #top [class*="bg-black/25"],
+        html.light #top [class*="bg-black/30"],
+        html.light #top [class*="bg-white/[0.05]"],
+        html.light #top [class*="bg-white/[0.055]"],
+        html.light #top [class*="bg-white/[0.06]"] {
+          background: rgba(255, 255, 255, 0.72) !important;
+        }
+
+        html.light #top [class*="border-white/10"],
+        html.light #top [class*="border-white/12"],
+        html.light #top [class*="border-white/15"] {
+          border-color: rgba(7, 26, 18, 0.085) !important;
+        }
+
+        html.light #top [class*="text-white/90"],
+        html.light #top [class*="text-white/85"],
+        html.light #top [class*="text-white/80"],
+        html.light #top [class*="text-white/75"],
+        html.light #top [class*="text-white/70"] {
+          color: rgba(7, 26, 18, 0.72) !important;
+        }
+
+        html.light #top [class*="text-white/65"],
+        html.light #top [class*="text-white/60"],
+        html.light #top [class*="text-white/55"] {
+          color: rgba(7, 26, 18, 0.56) !important;
+        }
+
+        html.light #top [class*="text-white/45"],
+        html.light #top [class*="text-white/40"],
+        html.light #top [class*="text-white/35"],
+        html.light #top [class*="text-white/30"] {
+          color: rgba(7, 26, 18, 0.42) !important;
+        }
+
+        html.light #top [class*="bg-[#b9fb6a]"] {
+          background-color: #9cf23e !important;
+          color: #071a12 !important;
+          box-shadow: 0 14px 32px rgba(112, 176, 38, 0.22) !important;
+        }
+
+        html.light #top [class*="text-[#b9fb6a]"] {
+          color: #4d8f18 !important;
+        }
+
+        html.light #top [class*="bg-[#b9fb6a]/"] {
+          background-color: rgba(156, 242, 62, 0.16) !important;
+          color: #3f7416 !important;
+        }
+
+        html.light #top a[class*="bg-white"],
+        html.light #top button[class*="bg-white"] {
+          background: #072116 !important;
+          color: #ffffff !important;
+          border-color: rgba(7, 33, 22, 0.12) !important;
+          box-shadow: 0 18px 38px rgba(7, 33, 22, 0.14) !important;
+        }
+
+        html.dark #top > section > div.grid > div,
+        html.dark #how-it-works,
+        html.dark #app-footer {
+          border-color: rgba(255, 255, 255, 0.11) !important;
+          box-shadow: 0 30px 90px rgba(0, 0, 0, 0.34) !important;
+        }
+
+        @media (min-width: 1024px) {
+          #top > section > div.grid > div {
+            border-radius: 34px !important;
+          }
+        }
+
+        @media (max-width: 640px) {
+          #top > section {
+            padding-inline: 12px !important;
+            padding-top: 12px !important;
+          }
+          #top > section > div.grid > div,
+          #how-it-works,
+          #app-footer {
+            border-radius: 28px !important;
+          }
+          #top input,
+          #top select {
+            min-height: 56px;
+          }
+        }
+
+        @media (max-width: 640px) {
+          #top h1 {
+            letter-spacing: -0.062em;
+          }
+        }
+        /* Final production UI pass — LIGHT MODE ONLY. Dark mode intentionally stays identical to previous approved version. */
+        html.light #top {
+          --tankaj-ink: #071a12;
+          --tankaj-muted: rgba(7, 26, 18, 0.6);
+          --tankaj-card-strong: rgba(255, 255, 255, 0.985);
+          --tankaj-border: rgba(10, 28, 19, 0.085);
+          --tankaj-shadow-soft: 0 24px 72px rgba(25, 35, 29, 0.105);
+          letter-spacing: -0.01em;
+          background: #f7f8fa !important;
+        }
+
+        html.light body {
+          background: #f7f8fa !important;
+        }
+
+        html.light #top > .pointer-events-none.fixed {
+          background:
+            radial-gradient(
+              circle at 17% 0%,
+              rgba(185, 251, 106, 0.18),
+              transparent 30%
+            ),
+            radial-gradient(
+              circle at 86% 7%,
+              rgba(40, 111, 73, 0.08),
+              transparent 34%
+            ),
+            linear-gradient(180deg, #fbfcf8 0%, #f7f8fa 47%, #efede6 100%) !important;
+        }
+
+        html.light #top > section {
+          max-width: 1280px !important;
+        }
+        html.light #top > section > div.grid {
+          gap: 22px !important;
+        }
+
+        @media (min-width: 1024px) {
+          html.light #top > section > div.grid > div {
+            min-height: 760px;
+          }
+        }
+
+        html.light #top > section > div.grid > div,
+        html.light #how-it-works,
+        html.light #app-footer {
+          background: var(--tankaj-card-strong) !important;
+          border-color: var(--tankaj-border) !important;
+          box-shadow:
+            var(--tankaj-shadow-soft),
+            0 1px 0 rgba(255, 255, 255, 0.9) inset !important;
+        }
+
+        html.light #top h1 {
+          letter-spacing: -0.07em !important;
+          line-height: 0.94 !important;
+        }
+        html.light #top h2,
+        html.light #top h3 {
+          letter-spacing: -0.045em !important;
+        }
+
+        html.light #top h1,
+        html.light #top h2,
+        html.light #top h3,
+        html.light #top [class*="font-black"] {
+          color: var(--tankaj-ink) !important;
+        }
+
+        html.light #top p,
+        html.light #top [class*="text-white/60"],
+        html.light #top [class*="text-white/65"],
+        html.light #top [class*="text-white/70"] {
+          color: var(--tankaj-muted) !important;
+        }
+
+        html.light #top input,
+        html.light #top select {
+          background: linear-gradient(
+            180deg,
+            #ffffff 0%,
+            #fbfcfa 100%
+          ) !important;
+          border-color: rgba(7, 26, 18, 0.095) !important;
+          color: #071a12 !important;
+          box-shadow:
+            0 1px 0 rgba(255, 255, 255, 0.95) inset,
+            0 10px 24px rgba(21, 35, 28, 0.038) !important;
+        }
+
+        html.light #top input:focus,
+        html.light #top select:focus {
+          border-color: rgba(143, 232, 56, 0.9) !important;
+          box-shadow:
+            0 0 0 4px rgba(185, 251, 106, 0.24),
+            0 14px 32px rgba(78, 139, 37, 0.09) !important;
+        }
+
+        html.light #top [class*="bg-[#b9fb6a]"] {
+          background: linear-gradient(
+            180deg,
+            #b9fb6a 0%,
+            #95ef32 100%
+          ) !important;
+          color: #06170f !important;
+          box-shadow: 0 14px 34px rgba(112, 176, 38, 0.22) !important;
+        }
+
+        html.light #top [class*="bg-[#b9fb6a]/"] {
+          background: rgba(185, 251, 106, 0.16) !important;
+          color: #477a16 !important;
+          box-shadow: none !important;
+        }
+
+        html.light #top button,
+        html.light #top a {
+          transform: translateZ(0);
+        }
+        html.light #top button:hover,
+        html.light #top a:hover {
+          filter: saturate(1.04);
+        }
+        html.light #top button:active,
+        html.light #top a:active {
+          transform: scale(0.985) translateZ(0);
+        }
+
+        html.light #top a[class*="bg-white"],
+        html.light #top button[class*="bg-white"] {
+          background: linear-gradient(
+            180deg,
+            #092719 0%,
+            #061a11 100%
+          ) !important;
+          color: #ffffff !important;
+          border-color: rgba(7, 26, 18, 0.14) !important;
+          box-shadow: 0 16px 38px rgba(7, 26, 18, 0.17) !important;
+        }
+
+        html.light #top [class*="text-[#b9fb6a]"] {
+          color: #4e8d18 !important;
+        }
+
+        html.light #how-it-works {
+          background: rgba(255, 255, 255, 0.96) !important;
+        }
+
+        html.light #how-it-works [class*="bg-white/"] {
+          background: #fbfcf9 !important;
+          box-shadow: 0 10px 28px rgba(21, 35, 28, 0.045) !important;
+        }
+
+        html.light #app-footer a {
+          color: #477a16 !important;
+        }
+
+        @media (max-width: 1023px) {
+          html.light #top > section {
+            max-width: 560px !important;
+          }
+          html.light #top > section > div.grid > div {
+            min-height: auto;
+          }
+        }
+        
+
+html.light .other-option-card {
+  background: #ffffff;
+  border: 1px solid #e6e9e4;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+  color: #0f1720;
+}
+
+
+html.light .other-option-card .title {
+  color: #0f1720;
+}
+
+html.light .other-option-card .price {
+  color: #16a34a; /* zelena, ampak readable */
+}
+
+html.light .other-option-card .meta {
+  color: #6b7280;
+}
+
+html.light .other-option-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 28px rgba(0,0,0,0.08);
+}
+
+
+        /* Final light-mode cards + disabled metric pills. Dark mode is intentionally untouched. */
+        html.light #top .compact-result-card {
+          background: linear-gradient(180deg, #ffffff 0%, #f7ffef 100%) !important;
+          border: 1px solid rgba(144, 222, 74, 0.34) !important;
+          color: #071a12 !important;
+          box-shadow:
+            0 14px 34px rgba(24, 35, 28, 0.075),
+            0 1px 0 rgba(255, 255, 255, 0.95) inset !important;
+        }
+
+        html.light #top .compact-result-card:hover {
+          background: linear-gradient(180deg, #fbfff6 0%, #efffdd 100%) !important;
+          border-color: rgba(144, 222, 74, 0.58) !important;
+          transform: translateY(-1px);
+          box-shadow:
+            0 18px 42px rgba(24, 35, 28, 0.105),
+            0 1px 0 rgba(255, 255, 255, 0.98) inset !important;
+        }
+
+        html.light #top .compact-result-card .compact-title,
+        html.light #top .compact-result-card .compact-distance {
+          color: #071a12 !important;
+        }
+
+        html.light #top .compact-result-card .compact-meta,
+        html.light #top .compact-result-card [class*="text-white/38"],
+        html.light #top .compact-result-card [class*="text-white/40"],
+        html.light #top .compact-result-card [class*="text-white/55"],
+        html.light #top .compact-result-card [class*="text-white/70"] {
+          color: rgba(7, 26, 18, 0.48) !important;
+        }
+
+        html.light #top .compact-result-card .compact-price,
+        html.light #top .compact-result-card .compact-total {
+          color: #4e8d18 !important;
+        }
+
+        html.light #top .toggle-info.is-inactive {
+          opacity: 1 !important;
+          background: linear-gradient(180deg, #ffffff 0%, #fbfcf8 100%) !important;
+          border-color: rgba(7, 26, 18, 0.10) !important;
+          box-shadow: 0 8px 22px rgba(21, 35, 28, 0.04) !important;
+        }
+
+        html.light #top .toggle-info.is-inactive div {
+          color: rgba(7, 26, 18, 0.48) !important;
+        }
+
+        html.light #top .toggle-info.is-inactive > div:first-child > div:first-child {
+          color: rgba(7, 26, 18, 0.62) !important;
+        }
+
+        html.light #top .toggle-info.is-active {
+          opacity: 1 !important;
+          background: linear-gradient(180deg, rgba(240, 255, 225, 0.96) 0%, rgba(250, 255, 244, 0.98) 100%) !important;
+          border-color: rgba(144, 222, 74, 0.46) !important;
+          box-shadow: 0 10px 26px rgba(112, 176, 38, 0.09) !important;
+        }
+
+        @media (max-width: 640px) {
+          html.light #top > section {
+            padding-inline: 10px !important;
+          }
+          html.light #top h1 {
+            font-size: clamp(3.2rem, 16vw, 4.9rem) !important;
+          }
+          html.light #top > section > div.grid {
+            gap: 12px !important;
+          }
+        }
+
+        html.light #top a.compact-result-card,
+html.light #top a.compact-result-card[class*="bg-white"] {
+  background: linear-gradient(180deg, #ffffff 0%, #f4fee9 100%) !important;
+  border: 1px solid rgba(144, 222, 74, 0.56) !important;
+  color: #071a12 !important;
+  box-shadow:
+    0 14px 34px rgba(24, 35, 28, 0.075),
+    0 1px 0 rgba(255, 255, 255, 0.95) inset !important;
+}
+
+html.light #top a.compact-result-card:hover,
+html.light #top a.compact-result-card[class*="bg-white"]:hover {
+  background: linear-gradient(180deg, #ffffff 0%, #efffdd 100%) !important;
+  border-color: rgba(144, 222, 74, 0.72) !important;
+  transform: translateY(-1px);
+}
+
+html.light #top a.compact-result-card .compact-title,
+html.light #top a.compact-result-card .compact-distance {
+  color: #071a12 !important;
+}
+
+html.light #top a.compact-result-card .compact-meta {
+  color: rgba(7, 26, 18, 0.52) !important;
+}
+
+html.light #top a.compact-result-card .compact-price,
+html.light #top a.compact-result-card .compact-total {
+  color: #4e8d18 !important;
+}
+
+/* Winner card highlight */
+#top .winner-card {
+  position: relative;
+  transform: scale(1.012);
+}
+
+#top .winner-card::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    135deg,
+    rgba(185, 251, 106, 0.55),
+    rgba(185, 251, 106, 0.08),
+    rgba(255, 255, 255, 0.08)
+  );
+  opacity: 0.65;
+  z-index: -1;
+}
+
+#top .winner-card {
+  box-shadow:
+    0 0 0 1px rgba(185, 251, 106, 0.28),
+    0 22px 70px rgba(185, 251, 106, 0.12),
+    0 24px 70px rgba(0, 0, 0, 0.22) !important;
+}
+
+html.light #top .winner-card {
+  box-shadow:
+    0 0 0 1px rgba(139, 222, 74, 0.32),
+    0 24px 70px rgba(112, 176, 38, 0.14),
+    0 24px 70px rgba(24, 35, 28, 0.08) !important;
+}
+
+html.light #top .winner-card::before {
+  background: linear-gradient(
+    135deg,
+    rgba(139, 222, 74, 0.42),
+    rgba(139, 222, 74, 0.08),
+    rgba(255, 255, 255, 0.6)
+  );
+}
+
+#top .winner-card-pulse {
+  position: relative;
+  
+}
+
+#top .winner-card-pulse::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  pointer-events: none;
+  border: 2px solid rgba(185, 251, 106, 0.65);
+  box-shadow:
+    0 0 0 1px rgba(185, 251, 106, 0.25),
+    0 0 20px rgba(185, 251, 106, 0.12);
+ 
+}
+
+@keyframes winnerPulse {
+  0% {
+    border-color: rgba(185, 251, 106, 0.95);
+    box-shadow:
+      0 18px 60px rgba(0, 0, 0, 0.24),
+      inset 0 0 0 1px rgba(185, 251, 106, 0.46),
+      0 0 0 rgba(185, 251, 106, 0);
+  }
+  42% {
+    border-color: rgba(185, 251, 106, 0.95);
+    box-shadow:
+      0 18px 60px rgba(0, 0, 0, 0.24),
+      inset 0 0 0 1px rgba(185, 251, 106, 0.5),
+      0 0 42px rgba(185, 251, 106, 0.2);
+  }
+  100% {
+    border-color: rgba(185, 251, 106, 0.7);
+    box-shadow:
+      0 18px 60px rgba(0, 0, 0, 0.24),
+      inset 0 0 0 1px rgba(185, 251, 106, 0.32);
+  }
+}
+
+@keyframes winnerRingPulse {
+  0% {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  18% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.035);
+  }
+}
+
+html.light #top .winner-card-pulse::after {
+  border-color: rgba(106, 169, 31, 0.55);
+  box-shadow:
+    0 0 0 1px rgba(106, 169, 31, 0.18),
+    0 0 34px rgba(106, 169, 31, 0.16);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #top .winner-card-pulse,
+  #top .winner-card-pulse::after {
+    animation: none;
+  }
+}
+
+@keyframes winnerBreath {
+  0%, 100% {
+    border-color: rgba(185, 251, 106, 0.65);
+    box-shadow:
+      0 18px 60px rgba(0,0,0,0.24),
+      inset 0 0 0 1px rgba(185,251,106,0.28),
+      0 0 0 rgba(185,251,106,0);
+  }
+
+  50% {
+    border-color: rgba(185, 251, 106, 0.9);
+    box-shadow:
+      0 18px 60px rgba(0,0,0,0.24),
+      inset 0 0 0 1px rgba(185,251,106,0.4),
+      0 0 36px rgba(185,251,106,0.18);
+  }
+}
+
+@keyframes winnerRingBreath {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.9;
+    transform: scale(1.03);
+  }
+}
+
+
+html.dark #top .winner-card {
+  border-color: rgba(185, 251, 106, 0.45);
+  background: rgba(7, 26, 18, 0.65);
+  box-shadow:
+    0 18px 60px rgba(0,0,0,.24),
+    inset 0 0 0 1px rgba(185,251,106,0.25);
+}
+
+
+html.light #top .winner-card {
+  border-color: rgba(185, 251, 106, 0.6);
+  background: #ffffff;
+  box-shadow:
+    0 10px 30px rgba(0,0,0,0.08),
+    0 0 0 1px rgba(185,251,106,0.15);
+}
+      `}
+
+</style>
+      <div
+        className={`pointer-events-none fixed inset-0 ${theme === "light" ? "bg-[radial-gradient(circle_at_18%_0%,rgba(185,251,106,.28),transparent_28%),radial-gradient(circle_at_92%_12%,rgba(44,120,76,.13),transparent_34%),linear-gradient(180deg,#f7f4ec_0%,#ebe6d8_100%)]" : "bg-[radial-gradient(circle_at_18%_0%,rgba(185,251,106,.23),transparent_28%),radial-gradient(circle_at_92%_12%,rgba(44,120,76,.24),transparent_34%),linear-gradient(180deg,#071a12_0%,#04100b_100%)]"}`}
+      />
+
+      <section className="relative mx-auto flex min-h-dvh w-full max-w-[1280px] min-w-0 flex-col px-3 py-3 sm:px-6 lg:px-8 lg:py-7">
         <div className="grid w-full min-w-0 flex-1 gap-4 lg:grid-cols-2 xl:gap-6">
           <HeroSearch
+            lang={lang}
+            setLang={setLang}
+            theme={theme}
+            setTheme={setTheme}
             mode={mode}
             setMode={setMode}
             fuelType={fuelType}
@@ -1244,6 +2283,7 @@ export default function Home() {
           />
 
           <ResultPanel
+            lang={lang}
             mode={mode}
             best={best}
             sortBy={sortBy}
@@ -1272,13 +2312,18 @@ export default function Home() {
           />
         </div>
 
-        <HowItWorks />
+        <HowItWorks lang={lang} />
+        <AppFooter lang={lang} />
       </section>
     </main>
   );
 }
 
 function HeroSearch({
+  lang,
+  setLang,
+  theme,
+  setTheme,
   mode,
   setMode,
   fuelType,
@@ -1324,12 +2369,34 @@ function HeroSearch({
 
   return (
     <div className="w-full min-w-0 max-w-full overflow-visible rounded-[30px] border border-white/10 bg-white/[0.055] p-4 shadow-[0_25px_80px_rgba(0,0,0,.25)] backdrop-blur-2xl sm:p-6 lg:min-h-[720px] lg:p-8">
-      <div className="flex items-center justify-between gap-4">
-        <div className="text-3xl font-black italic tracking-tight sm:text-4xl">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 text-3xl font-black italic tracking-tight sm:text-4xl">
           Tankaj<span className="text-[#b9fb6a]">.si</span>
         </div>
-        <div className="rounded-full bg-[#b9fb6a]/18 px-3 py-1 text-xs font-black tracking-wide text-[#b9fb6a]">
-          BETA
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setLang(lang === "sl" ? "en" : "sl")}
+            className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.08] px-3 text-xs font-black text-white/75 transition hover:border-[#b9fb6a]/30 hover:text-white"
+            aria-label="Change language"
+          >
+            <span>🌐</span>
+            <span>{tr(lang, "language")}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.08] text-sm text-white/75 transition hover:border-[#b9fb6a]/30 hover:text-white"
+            aria-label="Toggle theme"
+            title={
+              theme === "dark" ? tr(lang, "themeLight") : tr(lang, "themeDark")
+            }
+          >
+            {theme === "dark" ? "☀️" : "🌙"}
+          </button>
+          <div className="rounded-full bg-[#b9fb6a]/18 px-3 py-1 text-xs font-black tracking-wide text-[#b9fb6a]">
+            BETA
+          </div>
         </div>
       </div>
 
@@ -1339,13 +2406,11 @@ function HeroSearch({
       </div>
 
       <h1 className="mt-6 max-w-xl text-[42px] font-black leading-[.94] tracking-[-.055em] min-[380px]:text-[50px] sm:text-[64px] lg:text-[72px] xl:text-[78px]">
-        Ne tankaj več na pamet.
+        {tr(lang, "heroTitle")}
       </h1>
 
       <p className="mt-5 max-w-lg text-base leading-relaxed text-white/60 sm:text-lg">
-        Odpri app, dovoli lokacijo in Tankaj.si sam izračuna najboljšo izbiro.
-        Zdaj podpira goriva in EV polnilnice — z realno potjo, časom in oceno
-        skupnega stroška.
+        {tr(lang, "heroText")}
       </p>
 
       <div className="mt-4">
@@ -1356,14 +2421,16 @@ function HeroSearch({
         >
           <span>⌖</span>
           <span>
-            {showManualLocation ? "Skrij ročni vnos" : "Vnesi lokacijo ročno"}
+            {showManualLocation
+              ? tr(lang, "hideManual")
+              : tr(lang, "showManual")}
           </span>
         </button>
 
         {showManualLocation && (
           <div className="mt-3 rounded-[22px] border border-white/10 bg-[#071a12]/62 p-3">
             <label className="block text-xs font-black text-white/45">
-              Lokacija za iskanje
+              {tr(lang, "locationSearchLabel")}
             </label>
             <div className="mt-2 flex gap-2">
               <input
@@ -1375,7 +2442,7 @@ function HeroSearch({
                     selectManualLocation(manualLocationResults[0]);
                   }
                 }}
-                placeholder="Npr. Ljubljana, Koper, Zagreb ..."
+                placeholder={tr(lang, "locationPlaceholder")}
                 className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm font-bold text-white outline-none placeholder:text-white/30 focus:border-[#b9fb6a]/45"
               />
               <button
@@ -1389,13 +2456,13 @@ function HeroSearch({
                 }}
                 className="rounded-2xl bg-[#b9fb6a] px-4 py-3 text-sm font-black text-[#071a12]"
               >
-                Uporabi
+                {tr(lang, "use")}
               </button>
             </div>
 
             {manualLocationLoading && (
               <div className="mt-2 text-xs font-semibold text-white/45">
-                Iščem lokacijo ...
+                {tr(lang, "searchingLocation")}
               </div>
             )}
 
@@ -1423,30 +2490,29 @@ function HeroSearch({
             )}
 
             <div className="mt-2 text-[11px] leading-relaxed text-white/35">
-              Uporabno, če imaš sledenje lokacije izklopljeno. Iskanje bo
-              uporabljalo izbrano lokacijo namesto GPS-a.
+              {tr(lang, "manualHelp")}
             </div>
           </div>
         )}
       </div>
 
-      <ModeSwitch mode={mode} setMode={setMode} />
+      <ModeSwitch lang={lang} mode={mode} setMode={setMode} />
 
       <div className="mt-4 w-full min-w-0 max-w-full overflow-visible rounded-[26px] border border-white/10 bg-[#123024]/72 p-3 sm:p-4 lg:p-5">
         <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 items-end">
           {mode === "fuel" ? (
             <>
               <SelectDark
-                label="Gorivo"
+                label={tr(lang, "fuelLabel")}
                 value={fuelType}
                 onChange={setFuelType}
                 options={[
-                  ["PETROL_95", "Bencin 95"],
-                  ["DIESEL", "Dizel"],
+                  ["PETROL_95", tr(lang, "petrol95")],
+                  ["DIESEL", tr(lang, "diesel")],
                 ]}
               />
               <SelectDark
-                label="Radius"
+                label={tr(lang, "radius")}
                 value={String(radius)}
                 onChange={(v) => setRadius(Number(v))}
                 options={[
@@ -1459,13 +2525,13 @@ function HeroSearch({
                 ]}
               />
               <NumberDark
-                label="Količina"
+                label={tr(lang, "amount")}
                 suffix="L"
                 value={amount}
                 onChange={setAmount}
               />
               <BrandMultiSelect
-                label="Znamke"
+                label={tr(lang, "brands")}
                 value={brand}
                 onChange={setBrand}
                 options={brandOptions}
@@ -1479,7 +2545,7 @@ function HeroSearch({
               />
 
               <SelectDark
-                label="Radius"
+                label={tr(lang, "radius")}
                 value={String(radius)}
                 onChange={(v) => setRadius(Number(v))}
                 options={[
@@ -1497,7 +2563,7 @@ function HeroSearch({
                 onClick={() => setShowEvAdvanced((v) => !v)}
                 className="sm:col-span-2 flex h-[52px] items-center justify-between rounded-2xl border border-white/10 bg-[#071a12]/55 px-4 text-left text-sm font-black text-white/80 transition hover:border-[#b9fb6a]/35"
               >
-                <span>Napredne nastavitve</span>
+                <span>{tr(lang, "advanced")}</span>
                 <span className="text-lg text-[#b9fb6a]">
                   {showEvAdvanced ? "−" : "+"}
                 </span>
@@ -1506,32 +2572,36 @@ function HeroSearch({
               {showEvAdvanced && (
                 <div className="sm:col-span-2 grid grid-cols-1 gap-4 rounded-2xl border border-white/10 bg-black/15 p-3 sm:grid-cols-2">
                   <NumberDark
-                    label="Količina polnjenja"
+                    label={tr(lang, "chargeAmount")}
                     suffix="kWh"
                     value={evAmountKwh}
                     onChange={setEvAmountKwh}
                   />
 
                   <NumberDark
-                    label="Poraba vozila"
+                    label={tr(lang, "carConsumption")}
                     suffix="kWh/100 km"
                     value={evConsumptionKwh100}
                     onChange={setEvConsumptionKwh100}
                   />
 
                   <SelectDark
-                    label={evChargingMode === "AC" ? "AC moč" : "Min. moč"}
+                    label={
+                      evChargingMode === "AC"
+                        ? tr(lang, "acPower")
+                        : tr(lang, "minPower")
+                    }
                     value={String(evMinPowerKw)}
                     onChange={(v) => setEvMinPowerKw(Number(v))}
                     options={
                       evChargingMode === "AC"
                         ? [
-                            ["0", "Vse AC"],
+                            ["0", tr(lang, "allAc")],
                             ["11", "Do 11 kW"],
                             ["22", "22 kW+"],
                           ]
                         : [
-                            ["0", "Vse moči"],
+                            ["0", tr(lang, "allPowers")],
                             ["30", "30 kW+"],
                             ["50", "50 kW+"],
                             ["100", "100 kW+"],
@@ -1542,7 +2612,7 @@ function HeroSearch({
 
                   {mode === "fuel" && (
                     <SelectDark
-                      label="Država"
+                      label={tr(lang, "country")}
                       value={country}
                       onChange={setCountry}
                       options={COUNTRY_OPTIONS}
@@ -1552,6 +2622,7 @@ function HeroSearch({
               )}
 
               <EvSubscriptionToggle
+                lang={lang}
                 checked={useEvSubscriptionPrices}
                 onChange={setUseEvSubscriptionPrices}
               />
@@ -1564,49 +2635,52 @@ function HeroSearch({
             className="h-[56px] sm:h-[64px] rounded-2xl bg-[#b9fb6a] px-5 text-sm font-black text-[#071a12] shadow-[0_12px_30px_rgba(185,251,106,.22)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70 sm:col-span-2"
           >
             {status === "location"
-              ? "Pridobivam lokacijo ..."
+              ? tr(lang, "getLocation")
               : status === "routing"
                 ? mode === "ev"
-                  ? "Računam EV polnilnice ..."
-                  : "Računam realne poti ..."
+                  ? tr(lang, "calcEv")
+                  : tr(lang, "calcRoutes")
                 : mode === "ev"
-                  ? "Poišči najboljšo EV polnilnico"
-                  : "Osveži najboljšo izbiro"}
+                  ? tr(lang, "findEv")
+                  : tr(lang, "refreshBest")}
           </button>
         </div>
       </div>
 
       <div className="mt-4 grid min-w-0 grid-cols-3 gap-2 [&>*]:min-w-0">
         <ToggleInfo
-          title={mode === "ev" ? "Energija" : "Gorivo"}
-          text={mode === "ev" ? "Cena × kWh" : "Cena × količina"}
+          title={mode === "ev" ? tr(lang, "energy") : tr(lang, "fuelCost")}
+          text={
+            mode === "ev"
+              ? tr(lang, "priceTimesKwh")
+              : tr(lang, "priceTimesAmount")
+          }
           active={includeFuel}
           onClick={() => setIncludeFuel((v: boolean) => !v)}
         />
         <ToggleInfo
-          title="Pot"
-          text="Realna vožnja"
+          title={tr(lang, "route")}
+          text={tr(lang, "realDrive")}
           active={includePath}
           onClick={() => setIncludePath((v: boolean) => !v)}
         />
         <ToggleInfo
-          title="Čas"
-          text="Privzeto 12 €/h"
+          title={tr(lang, "time")}
+          text={tr(lang, "defaultHour")}
           active={includeTime}
           onClick={() => setIncludeTime((v: boolean) => !v)}
         />
       </div>
 
       <p className="mt-3 text-[11px] leading-relaxed text-white/35">
-        Nastavitve si zapomnimo na tej napravi. EV cene so označene kot
-        preverjene ali ocenjene glede na vir podatkov. Cene s paketom so
-        označene z zvezdico in se uporabijo samo, če paket obkljukaš.
+        {tr(lang, "settingsNote")}
       </p>
     </div>
   );
 }
 
 function ResultPanel({
+  lang,
   mode,
   best,
   sortBy,
@@ -1633,14 +2707,25 @@ function ResultPanel({
   pricingMode,
   disclaimer,
 }: any) {
-  const sortOptions = mode === "ev" ? SORT_OPTIONS_EV : SORT_OPTIONS_FUEL;
+  const sortOptions: [SortBy, string][] =
+    mode === "ev"
+      ? [
+          ["smart", tr(lang, "recommended")],
+          ["price", tr(lang, "cheapestKwh")],
+          ["distance", tr(lang, "nearest")],
+        ]
+      : [
+          ["smart", tr(lang, "recommended")],
+          ["price", tr(lang, "cheapestLiter")],
+          ["distance", tr(lang, "nearest")],
+        ];
 
   return (
     <div
       id="result"
       className="w-full min-w-0 max-w-full overflow-hidden rounded-[30px] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(185,251,106,.18),transparent_32%),linear-gradient(180deg,rgba(15,48,34,.86),rgba(5,20,14,.88))] p-4 shadow-[0_25px_80px_rgba(0,0,0,.25)] backdrop-blur-2xl sm:p-6 lg:min-h-[720px] lg:p-8"
     >
-      {loading && <LoadingState status={status} />}
+      {loading && <LoadingState lang={lang} status={status} />}
 
       {searched && !loading && status === "done" && !best && (
         <EmptyState
@@ -1657,7 +2742,7 @@ function ResultPanel({
       {searched && !loading && status === "error" && (
         <EmptyState text="Pri iskanju je prišlo do napake. Poskusi znova." />
       )}
-      {!searched && !loading && <ExampleState />}
+      {!searched && !loading && <ExampleState lang={lang} />}
 
       {!loading && best && (
         <>
@@ -1703,12 +2788,12 @@ function ResultPanel({
               <div className="mt-5 flex w-full min-w-0 items-center justify-between gap-3 overflow-hidden">
                 <h2 className="min-w-0 truncate text-[24px] font-black leading-tight tracking-[-0.04em] text-white sm:text-2xl">
                   {mode === "ev"
-                    ? "Več EV polnilnic"
-                    : "Druge odlične možnosti"}
+                    ? tr(lang, "moreEv")
+                    : tr(lang, "otherOptions")}
                 </h2>
                 {lastUpdated && (
                   <div className="shrink-0 whitespace-nowrap text-xs text-white/40">
-                    Cene {lastUpdated}
+                    {tr(lang, "prices")} {lastUpdated}
                   </div>
                 )}
               </div>
@@ -1741,18 +2826,18 @@ function ResultPanel({
                 className="mt-3 w-full rounded-2xl border border-white/10 bg-white/[0.06] px-5 py-4 text-sm font-black text-white transition hover:bg-white/[0.1] disabled:opacity-60"
               >
                 {loadingMore
-                  ? "Računam dodatne možnosti ..."
+                  ? tr(lang, "loadingMore")
                   : !showOthers
                     ? mode === "ev"
-                      ? "Prikaži več EV polnilnic"
-                      : "Prikaži druge odlične možnosti"
+                      ? tr(lang, "showMoreEv")
+                      : tr(lang, "showOtherOptions")
                     : hasMore
                       ? mode === "ev"
-                        ? "Naloži več EV polnilnic"
-                        : "Naloži še 5 možnosti"
+                        ? tr(lang, "loadMoreEv")
+                        : tr(lang, "loadMore5")
                       : mode === "ev"
-                        ? "Prikazane so vse izračunane EV polnilnice"
-                        : "Prikazane so vse izračunane možnosti"}
+                        ? tr(lang, "allEvShown")
+                        : tr(lang, "allShown")}
               </button>
             </>
           )}
@@ -1834,11 +2919,9 @@ function BestCard({
   const displayTotal = scoreItem(item, includeFuel, includePath, includeTime);
   const ev = isEv(item);
   return (
-    <div className="w-full min-w-0 max-w-full overflow-hidden rounded-[28px] border border-[#b9fb6a]/35 bg-[#071a12]/65 p-4 shadow-[0_18px_60px_rgba(0,0,0,.24)] sm:p-5">
-      <div className="flex min-w-0 items-start justify-between gap-3">
+<div className="winner-card winner-card-pulse w-full min-w-0 max-w-full overflow-hidden rounded-[30px] border border-[#b9fb6a]/70 bg-[linear-gradient(180deg,rgba(7,26,18,0.78),rgba(7,26,18,0.66))] p-4 shadow-[0_18px_60px_rgba(0,0,0,.24),inset_0_0_0_1px_rgba(185,251,106,0.32)] sm:p-5">      <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0 overflow-hidden">
-          <div className="text-[10px] font-black uppercase tracking-[.22em] text-[#b9fb6a] sm:text-xs sm:tracking-[.26em]">
-            {ev ? "Najboljša EV izbira" : "Najboljša izbira"}
+<div className="inline-flex rounded-full bg-[#b9fb6a]/14 px-3 py-1 text-[10px] font-black uppercase tracking-[.22em] text-[#b9fb6a] ring-1 ring-[#b9fb6a]/25 sm:text-xs sm:tracking-[.24em]">            {ev ? "Najboljša EV izbira" : "Najboljša izbira"}
           </div>
           <h2 className="mt-2 break-words text-xl font-black leading-tight tracking-tight sm:text-3xl">
             {item.name}
@@ -2015,7 +3098,7 @@ function CompactResult({
           station_brand: item.brand || null,
         })
       }
-      className="block w-full max-w-full overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.06] px-3 py-4 transition hover:bg-white/[0.09] sm:p-4"
+      className="compact-result-card block w-full max-w-full overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.06] px-3 py-4 transition hover:bg-white/[0.09] sm:p-4"
     >
       <div className="grid w-full min-w-0 grid-cols-[54px_minmax(0,1fr)_76px] items-center gap-3 sm:grid-cols-[62px_minmax(0,1fr)_92px]">
         <div className="contents">
@@ -2025,13 +3108,13 @@ function CompactResult({
             {brandShort(item.brand)}
           </div>
           <div className="min-w-0 overflow-hidden">
-            <div className="truncate text-[15px] font-black leading-tight tracking-[-0.02em] text-white sm:text-base">
+            <div className="compact-title truncate text-[15px] font-black leading-tight tracking-[-0.02em] text-white sm:text-base">
               {item.name}
             </div>
-            <div className="mt-1 truncate text-[12px] font-semibold text-white/38">
+            <div className="compact-meta mt-1 truncate text-[12px] font-semibold text-white/38">
               {countryLabel(item.country_code)} · {item.address}
             </div>
-            <div className="mt-2 text-[22px] font-black leading-none tracking-[-0.04em] text-[#b9fb6a] sm:text-2xl">
+            <div className="compact-price mt-2 text-[22px] font-black leading-none tracking-[-0.04em] text-[#b9fb6a] sm:text-2xl">
               {formatUnitPrice(item)}
             </div>
             {!hasUsablePrice(item) && item.price_warning && (
@@ -2053,14 +3136,14 @@ function CompactResult({
           </div>
         </div>
         <div className="w-[76px] shrink-0 text-right sm:w-[92px]">
-          <div className="text-[13px] font-black text-white/80 sm:text-sm">
+          <div className="compact-distance text-[13px] font-black text-white/80 sm:text-sm">
             {formatKm(item.distance_km)}
           </div>
           <div className="text-[11px] text-white/40">
             ~{item.estimated_drive_minutes} min
           </div>
           <div className="mt-1 text-[10px] text-white/40">skupaj</div>
-          <div className="text-[16px] font-black leading-tight text-[#b9fb6a] sm:text-lg">
+          <div className="compact-total text-[16px] font-black leading-tight text-[#b9fb6a] sm:text-lg">
             {displayTotal < 999999 ? formatMoney(displayTotal) : "—"}
           </div>
         </div>
@@ -2069,32 +3152,34 @@ function CompactResult({
   );
 }
 
-function ExampleState() {
+function ExampleState({ lang }: { lang: Lang }) {
   return (
     <div className="flex h-full min-h-[520px] flex-col justify-center">
       <div className="text-xs font-black uppercase tracking-[.28em] text-[#b9fb6a]">
-        Samodejni izračun
+        {tr(lang, "automaticCalc")}
       </div>
       <h2 className="mt-3 max-w-xl text-4xl font-black leading-tight tracking-tight">
-        Dovoli lokacijo in rezultat se izračuna sam.
+        {tr(lang, "allowLocationTitle")}
       </h2>
       <div className="mt-7 space-y-3">
         <div className="rounded-3xl bg-white/[0.07] p-4">
-          <div className="text-sm text-white/45">1. Lokacija</div>
+          <div className="text-sm text-white/45">1. {tr(lang, "location")}</div>
           <div className="mt-1 text-2xl font-black text-[#b9fb6a]">
-            najbližje realne poti
+            {tr(lang, "closestRoutes")}
           </div>
         </div>
         <div className="rounded-3xl bg-white/[0.07] p-4">
-          <div className="text-sm text-white/45">2. Parametri</div>
+          <div className="text-sm text-white/45">
+            2. {tr(lang, "parameters")}
+          </div>
           <div className="mt-1 text-2xl font-black text-[#b9fb6a]">
-            gorivo ali EV, radij, količina
+            {tr(lang, "paramsText")}
           </div>
         </div>
         <div className="rounded-3xl bg-[#b9fb6a] p-4 text-[#071a12]">
-          <div className="text-sm opacity-70">3. Rezultat</div>
+          <div className="text-sm opacity-70">3. {tr(lang, "result")}</div>
           <div className="mt-1 text-2xl font-black">
-            ena najboljša izbira + alternative
+            {tr(lang, "resultText")}
           </div>
         </div>
       </div>
@@ -2102,13 +3187,13 @@ function ExampleState() {
   );
 }
 
-function LoadingState({ status }: { status: SearchStatus }) {
+function LoadingState({ lang, status }: { lang: Lang; status: SearchStatus }) {
   return (
     <div className="rounded-[28px] border border-white/10 bg-white/[0.06] p-5">
       <div className="text-sm font-semibold text-white/55">
         {status === "location"
-          ? "Pridobivam tvojo lokacijo ..."
-          : "Računam realne poti in strošek ..."}
+          ? tr(lang, "getLocation")
+          : tr(lang, "calcRoutes")}
       </div>
       <div className="mt-5 h-10 w-64 animate-pulse rounded-full bg-white/10" />
       <div className="mt-6 space-y-3">
@@ -2164,7 +3249,7 @@ function ToggleInfo({
     <button
       type="button"
       onClick={onClick}
-      className={`min-w-0 overflow-hidden rounded-2xl border p-2.5 text-left transition sm:p-3 ${active ? "border-[#b9fb6a]/35 bg-[#b9fb6a]/12" : "border-white/10 bg-white/[0.04] opacity-55"}`}
+      className={`toggle-info ${active ? "is-active" : "is-inactive"} min-w-0 overflow-hidden rounded-2xl border p-2.5 text-left transition sm:p-3 ${active ? "border-[#b9fb6a]/35 bg-[#b9fb6a]/12" : "border-white/10 bg-white/[0.04] opacity-55"}`}
     >
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0 truncate text-xs font-black text-white sm:text-sm">
@@ -2194,46 +3279,63 @@ function MiniInfo({ title, text }: { title: string; text: string }) {
   );
 }
 
-function HowItWorks() {
+function HowItWorks({ lang }: { lang: Lang }) {
   return (
     <section
       id="how-it-works"
       className="mt-5 w-full min-w-0 overflow-hidden rounded-[30px] border border-white/10 bg-white/[0.055] p-5 backdrop-blur-2xl sm:p-7"
     >
-      <h2 className="text-3xl font-black tracking-tight">Kako deluje?</h2>
+      <h2 className="text-3xl font-black tracking-tight">
+        {tr(lang, "howWorks")}
+      </h2>
       <p className="mt-4 max-w-4xl text-sm leading-relaxed text-white/60 sm:text-base">
-        Tankaj.si samodejno izračuna realne poti do črpalk in EV polnilnic v
-        izbranem radiju. Pri gorivu primerja ceno na liter, pri EV pa ceno na
-        kWh, moč polnilnice, pot in čas. Uporabnik lahko sam določi, ali se pri
-        skupnem strošku upoštevajo energija, pot in čas.
+        {tr(lang, "howWorksText")}
       </p>
       <div className="mt-5 grid gap-3 md:grid-cols-3">
-        <MiniInfo title="Formula" text="energija + pot + čas" />
-        <MiniInfo title="Radius" text="Vedno upoštevamo tvoj izbor" />
-        <MiniInfo title="Samodejno" text="Zadnje nastavitve si zapomnimo" />
+        <MiniInfo title={tr(lang, "formula")} text={tr(lang, "formulaText")} />
+        <MiniInfo title={tr(lang, "radius")} text={tr(lang, "radiusText")} />
+        <MiniInfo
+          title={tr(lang, "automaticCalc")}
+          text={tr(lang, "autoText")}
+        />
       </div>
       <div className="mt-5 rounded-3xl border border-white/10 bg-white/[0.05] p-4 text-sm leading-relaxed text-white/55">
-        <div className="font-black text-white">Opombe o EV cenah</div>
-        <p className="mt-2">
-          Pri EV polnilnicah najprej uporabljamo preverjene tarife, kjer so
-          javno dostopne. Kjer točne tarife niso javno objavljene, uporabimo
-          referenčno oceno po državi in tipu polnjenja (AC/DC).
-        </p>
-        <p className="mt-2">
-          Referenčni viri vključujejo javne cenike večjih ponudnikov, kot so
-          Petrol, Gremo na elektriko, MOL Plugee, Smatrics, Enel X Way, IONITY
-          in drugi. Dejanska cena se lahko razlikuje glede na aplikacijo,
-          naročnino ali roaming kartico.
-        </p>
+        <div className="font-black text-white">{tr(lang, "evPriceNotes")}</div>
+        <p className="mt-2">{tr(lang, "evPriceNotes1")}</p>
+        <p className="mt-2">{tr(lang, "evPriceNotes2")}</p>
       </div>
     </section>
   );
 }
 
+function AppFooter({ lang }: { lang: Lang }) {
+  return (
+    <footer
+      id="app-footer"
+      className="mt-4 flex w-full flex-col items-center justify-center gap-2 rounded-[28px] border border-white/10 bg-white/[0.045] px-5 py-6 text-center text-xs text-white/45 backdrop-blur-2xl sm:flex-row sm:gap-3"
+    >
+      <span>
+        {tr(lang, "footerCopyright")} · {tr(lang, "footerAuthor")} Gašper Parte
+      </span>
+      <span className="hidden text-white/25 sm:inline">•</span>
+      <a
+        href="https://www.linkedin.com/in/gasperparte/"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="font-black text-[#b9fb6a] transition hover:opacity-75"
+      >
+        {tr(lang, "footerContact")}
+      </a>
+    </footer>
+  );
+}
+
 function ModeSwitch({
+  lang,
   mode,
   setMode,
 }: {
+  lang: Lang;
   mode: SearchMode;
   setMode: (value: SearchMode) => void;
 }) {
@@ -2244,7 +3346,7 @@ function ModeSwitch({
         onClick={() => setMode("fuel")}
         className={`rounded-[18px] px-4 py-3 text-sm font-black transition ${mode === "fuel" ? "bg-[#b9fb6a] text-[#071a12] shadow-[0_10px_24px_rgba(185,251,106,.18)]" : "text-white/55 hover:text-white"}`}
       >
-        ⛽ Goriva
+        ⛽ {tr(lang, "fuel")}
       </button>
       <button
         type="button"
@@ -2255,7 +3357,7 @@ function ModeSwitch({
             : "text-white/55 hover:text-white"
         }`}
       >
-        ⚡ EV polnilnice
+        ⚡ {tr(lang, "evChargers")}
       </button>
     </div>
   );
@@ -2350,16 +3452,18 @@ function NumberDark({
 }
 
 function EvChargeSwitch({
+  lang,
   value,
   onChange,
 }: {
+  lang: Lang;
   value: EvChargingMode;
   onChange: (value: EvChargingMode) => void;
 }) {
   return (
     <div>
       <span className="mb-1.5 block text-xs font-semibold text-white/50">
-        Tip polnjenja
+        {tr(lang, "evChargers")}
       </span>
       <div className="grid h-[56px] grid-cols-2 rounded-2xl border border-white/10 bg-[#071a12] p-1 sm:h-[64px]">
         <button
@@ -2367,7 +3471,7 @@ function EvChargeSwitch({
           onClick={() => onChange("DC")}
           className={`rounded-xl text-xs font-black transition sm:text-sm ${value === "DC" ? "bg-[#b9fb6a] text-[#071a12]" : "text-white/55"}`}
         >
-          ⚡ DC hitro
+          ⚡ {lang === "sl" ? "DC hitro" : "DC fast"}
         </button>
         <button
           type="button"
@@ -2382,9 +3486,11 @@ function EvChargeSwitch({
 }
 
 function EvSubscriptionToggle({
+  lang,
   checked,
   onChange,
 }: {
+  lang: Lang;
   checked: boolean;
   onChange: (value: boolean) => void;
 }) {
@@ -2401,10 +3507,14 @@ function EvSubscriptionToggle({
       >
         <div className="min-w-0">
           <div className="text-xs font-black text-white sm:text-sm">
-            Imam EV paket / aplikacijo za ugodnejšo tarifo
+            {lang === "sl"
+              ? "Imam EV paket / aplikacijo za ugodnejšo tarifo"
+              : "I have an EV package / app with a better tariff"}
           </div>
           <div className="mt-1 text-[11px] font-semibold leading-relaxed text-white/45">
-            Upoštevamo nižje cene z zvezdico samo pri ujemajočih se ponudnikih.
+            {lang === "sl"
+              ? "Upoštevamo nižje cene z zvezdico samo pri ujemajočih se ponudnikih."
+              : "Lower prices marked with an asterisk are used only for matching providers."}
           </div>
         </div>
         <span
