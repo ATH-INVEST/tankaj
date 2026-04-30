@@ -7,6 +7,7 @@ import { GET as ingestAustria } from "@/app/api/ingest/austria/route";
 import { GET as ingestAustriaPrices } from "@/app/api/ingest/austria-prices/route";
 import { GET as ingestEv } from "@/app/api/ingest/ev/route";
 import { GET as ingestEvPrices } from "@/app/api/ingest/ev-prices/route";
+import { GET as ingestGermany } from "@/app/api/ingest/germany/route";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -180,6 +181,11 @@ export async function GET(req: NextRequest) {
       path: "/api/ingest/austria-prices?fuel=DIE&limit=180&offset=360",
       handler: ingestAustriaPrices,
     },
+{
+  label: "Germany fuel prices",
+  path: "/api/ingest/germany?limit=1&fuel=diesel",
+  handler: ingestGermany,
+},
     {
       label: "ev-locations",
       path: "/api/ingest/ev",

@@ -199,16 +199,29 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !TANKERKOENIG_API_KEY) {
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            "Missing env vars. Required: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, TANKERKOENIG_API_KEY",
-        },
-        { status: 500 },
-      );
-    }
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  return NextResponse.json(
+    {
+      success: false,
+      error:
+        "Missing env vars. Required: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY",
+    },
+    { status: 500 },
+  );
+}
+
+if (!TANKERKOENIG_API_KEY) {
+  return NextResponse.json({
+    success: true,
+    source: "tankerkoenig",
+    country: "DE",
+    ready: false,
+    skipped: true,
+    reason: "TANKERKOENIG_API_KEY is not configured yet",
+    startedAt,
+    finishedAt: new Date().toISOString(),
+  });
+}
 
     const searchParams = req.nextUrl.searchParams;
 

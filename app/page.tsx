@@ -92,7 +92,7 @@ const THEME_STORAGE_KEY = "tankaj_theme";
 
 const TEXT = {
   sl: {
-    countries: "Slovenija, Hrvaška, Avstrija, Italija",
+    countries: "Slovenija, Hrvaška, Avstrija, Italija, Nemčija",
     heroTitle: "Ne tankaj več na pamet.",
     heroText:
       "Odpri app, dovoli lokacijo in Tankaj.si sam izračuna najboljšo izbiro. Zdaj podpira goriva in EV polnilnice — z realno potjo, časom in oceno skupnega stroška.",
@@ -178,7 +178,7 @@ const TEXT = {
     footerContact: "Kontakt na LinkedIn",
   },
   en: {
-    countries: "Slovenia, Croatia, Austria, Italy",
+    countries: "Slovenia, Croatia, Austria, Italy, Germany",
     heroTitle: "Don’t fuel blindly.",
     heroText:
       "Open the app, allow location and Tankaj.si calculates the best option for you. It now supports fuel and EV chargers — with real routes, time and estimated total cost.",
@@ -289,6 +289,7 @@ const COUNTRY_OPTIONS = [
   ["HR", "Hrvaška"],
   ["AT", "Avstrija"],
   ["IT", "Italija"],
+  ["DE", "Nemčija"],
 ];
 
 function formatMoney(value?: number | null) {
@@ -2402,7 +2403,7 @@ function HeroSearch({
 
       <div className="mt-5 flex items-center gap-2 text-sm text-white/58">
         <span className="text-[#b9fb6a]">⌖</span>
-        <span>Slovenija, Hrvaška, Avstrija, Italija</span>
+        <span>Slovenija, Hrvaška, Avstrija, Italija, Nemčija</span>
       </div>
 
       <h1 className="mt-6 max-w-xl text-[42px] font-black leading-[.94] tracking-[-.055em] min-[380px]:text-[50px] sm:text-[64px] lg:text-[72px] xl:text-[78px]">
