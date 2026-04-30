@@ -204,6 +204,10 @@ export async function GET(req: NextRequest) {
     results,
   });
 
+  if (!success) {
+    console.error("[INGEST ALL] FAILED", results);
+  }
+
   return NextResponse.json({
     success,
     startedAt,
