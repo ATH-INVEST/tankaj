@@ -860,23 +860,49 @@ export default function Home() {
   const activeRequestId = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const didAutoLocate = useRef(false);
-  const [isAppMode, setIsAppMode] = useState(false);
+  const [isAppMode, setIsAppMode] = useState(() => {
+  if (typeof window === "undefined") return false;
+
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const isCapacitor =
+      Boolean((window as any).Capacitor) ||
+      navigator.userAgent.includes("Capacitor");
+
+    const standalone =
+      window.matchMedia?.("(display-mode: standalone)")?.matches ||
+      (navigator as any).standalone === true;
+
+    return Boolean(params.get("app") === "1" || standalone || isCapacitor);
+  } catch {
+    return false;
+  }
+});
 
   const loading = status === "location" || status === "routing";
 
   useEffect(() => {
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const appParam = params.get("app") === "1";
-      const standalone = window.matchMedia?.("(display-mode: standalone)")?.matches;
-      const isCapacitor = Boolean((window as any).Capacitor);
-      const nextValue = Boolean(appParam || standalone || isCapacitor);
-      setIsAppMode(nextValue);
-      document.documentElement.classList.toggle("tankaj-native-app", nextValue);
-    } catch {
-      setIsAppMode(false);
-    }
-  }, []);
+  try {
+    const params = new URLSearchParams(window.location.search);
+
+    const isCapacitor =
+      Boolean((window as any).Capacitor) ||
+      navigator.userAgent.includes("Capacitor");
+
+    const standalone =
+      window.matchMedia?.("(display-mode: standalone)")?.matches ||
+      (navigator as any).standalone === true;
+
+    const nextValue = Boolean(
+      params.get("app") === "1" || standalone || isCapacitor,
+    );
+
+    setIsAppMode(nextValue);
+    document.documentElement.classList.toggle("tankaj-native-app", nextValue);
+  } catch {
+    setIsAppMode(false);
+  }
+}, []);
 
   useEffect(() => {
     try {
@@ -1549,7 +1575,7 @@ export default function Home() {
       id="top"
       className={`relative min-h-dvh w-full max-w-[100svw] overflow-x-clip ${
         isAppMode
-? "tankaj-app-shell app-shell pb-[calc(6.8rem+env(safe-area-inset-bottom))]"
+          ? "tankaj-app-shell app-shell pb-[calc(7.2rem+env(safe-area-inset-bottom))]"
           : "pb-[calc(7rem+env(safe-area-inset-bottom))] md:pb-0"
       } ${
         theme === "light"
@@ -2503,17 +2529,14 @@ export default function Home() {
             background: rgba(255, 255, 255, 0.9) !important;
           }
           html,
-body {
-  overscroll-behavior: none;
-}
+          body {
+            overscroll-behavior: none;
+          }
 
-.app-shell {
-  padding-top: max(env(safe-area-inset-top), 24px);
-  padding-bottom: max(env(safe-area-inset-bottom), 16px);
-}
-
-
-
+          .app-shell {
+            padding-top: 12px;
+            padding-bottom: max(env(safe-area-inset-bottom), 16px);
+          }
         `}
       </style>
       <div
@@ -2524,8 +2547,12 @@ body {
         }`}
       />
 
-      <section className={`relative mx-auto flex min-h-dvh w-full min-w-0 flex-col ${isAppMode ? "max-w-[520px] px-3.5 py-2" : "max-w-[1280px] px-3 py-3 sm:px-6 lg:px-8 lg:py-7"}`}>
-        <div className={`grid w-full min-w-0 flex-1 gap-4 ${isAppMode ? "grid-cols-1" : "lg:grid-cols-2 xl:gap-6"}`}>
+      <section
+        className={`relative mx-auto flex min-h-dvh w-full min-w-0 flex-col ${isAppMode ? "max-w-[520px] px-3.5 py-2" : "max-w-[1280px] px-3 py-3 sm:px-6 lg:px-8 lg:py-7"}`}
+      >
+        <div
+          className={`grid w-full min-w-0 flex-1 gap-4 ${isAppMode ? "grid-cols-1" : "lg:grid-cols-2 xl:gap-6"}`}
+        >
           <HeroSearch
             isAppMode={isAppMode}
             lang={lang}
@@ -2662,7 +2689,9 @@ function HeroSearch({
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   return (
-    <div className={`w-full min-w-0 max-w-full overflow-visible border border-white/10 bg-white/[0.055] shadow-[0_25px_80px_rgba(0,0,0,.25)] backdrop-blur-2xl ${isAppMode ? "app-search-card rounded-[32px] p-4" : "rounded-[30px] p-4 sm:p-6 lg:min-h-[720px] lg:p-8"}`}> 
+    <div
+      className={`w-full min-w-0 max-w-full overflow-visible border border-white/10 bg-white/[0.055] shadow-[0_25px_80px_rgba(0,0,0,.25)] backdrop-blur-2xl ${isAppMode ? "app-search-card rounded-[32px] p-4" : "rounded-[30px] p-4 sm:p-6 lg:min-h-[720px] lg:p-8"}`}
+    >
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0 text-3xl font-black italic tracking-tight sm:text-4xl">
           Tankaj<span className="text-[#b9fb6a]">.si</span>

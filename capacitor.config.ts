@@ -5,25 +5,25 @@ const config: CapacitorConfig = {
   appName: "Tankaj",
   webDir: "out",
   server: {
-    url: "http://localhost:3000",
-    cleartext: true,
-  },
+  url: "https://www.tankaj.si/?app=1",
+  cleartext: false,
+},
   ios: {
     contentInset: "never",
     scrollEnabled: true,
   },
   plugins: {
-    SplashScreen: {
-      launchShowDuration: 800,
-      backgroundColor: "#06140f",
-      showSpinner: false,
-    },
-    StatusBar: {
-      style: "LIGHT",
-      backgroundColor: "#06140f",
-      overlaysWebView: true,
-    },
+  SplashScreen: {
+    launchShowDuration: 800,
+    backgroundColor: "#06140f",
+    showSpinner: false,
   },
+  StatusBar: {
+    style: "LIGHT",
+    backgroundColor: "#06140f",
+    overlaysWebView: false,
+  },
+},
 };
 
 export default config;
