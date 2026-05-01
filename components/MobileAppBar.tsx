@@ -64,7 +64,7 @@ export default function MobileAppBar() {
   if (!visible) return null;
 
   return (
-<nav className="fixed inset-x-3 bottom-[max(env(safe-area-inset-bottom),12px)] z-[9999] mx-auto max-w-[420px] rounded-[28px] border border-white/10 bg-[#071a12]/88 p-2 shadow-[0_22px_70px_rgba(0,0,0,.46)] backdrop-blur-2xl md:hidden">
+    <nav className="fixed inset-x-4 bottom-[max(calc(env(safe-area-inset-bottom)+12px),22px)] z-[9999] mx-auto max-w-[420px] rounded-[30px] border border-white/10 bg-[#071a12]/92 p-2 shadow-[0_24px_80px_rgba(0,0,0,.52)] backdrop-blur-2xl md:hidden">
       <div className="grid grid-cols-3 gap-1.5">
         <button
           type="button"

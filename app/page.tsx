@@ -861,48 +861,48 @@ export default function Home() {
   const abortRef = useRef<AbortController | null>(null);
   const didAutoLocate = useRef(false);
   const [isAppMode, setIsAppMode] = useState(() => {
-  if (typeof window === "undefined") return false;
+    if (typeof window === "undefined") return false;
 
-  try {
-    const params = new URLSearchParams(window.location.search);
-    const isCapacitor =
-      Boolean((window as any).Capacitor) ||
-      navigator.userAgent.includes("Capacitor");
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const isCapacitor =
+        Boolean((window as any).Capacitor) ||
+        navigator.userAgent.includes("Capacitor");
 
-    const standalone =
-      window.matchMedia?.("(display-mode: standalone)")?.matches ||
-      (navigator as any).standalone === true;
+      const standalone =
+        window.matchMedia?.("(display-mode: standalone)")?.matches ||
+        (navigator as any).standalone === true;
 
-    return Boolean(params.get("app") === "1" || standalone || isCapacitor);
-  } catch {
-    return false;
-  }
-});
+      return Boolean(params.get("app") === "1" || standalone || isCapacitor);
+    } catch {
+      return false;
+    }
+  });
 
   const loading = status === "location" || status === "routing";
 
   useEffect(() => {
-  try {
-    const params = new URLSearchParams(window.location.search);
+    try {
+      const params = new URLSearchParams(window.location.search);
 
-    const isCapacitor =
-      Boolean((window as any).Capacitor) ||
-      navigator.userAgent.includes("Capacitor");
+      const isCapacitor =
+        Boolean((window as any).Capacitor) ||
+        navigator.userAgent.includes("Capacitor");
 
-    const standalone =
-      window.matchMedia?.("(display-mode: standalone)")?.matches ||
-      (navigator as any).standalone === true;
+      const standalone =
+        window.matchMedia?.("(display-mode: standalone)")?.matches ||
+        (navigator as any).standalone === true;
 
-    const nextValue = Boolean(
-      params.get("app") === "1" || standalone || isCapacitor,
-    );
+      const nextValue = Boolean(
+        params.get("app") === "1" || standalone || isCapacitor,
+      );
 
-    setIsAppMode(nextValue);
-    document.documentElement.classList.toggle("tankaj-native-app", nextValue);
-  } catch {
-    setIsAppMode(false);
-  }
-}, []);
+      setIsAppMode(nextValue);
+      document.documentElement.classList.toggle("tankaj-native-app", nextValue);
+    } catch {
+      setIsAppMode(false);
+    }
+  }, []);
 
   useEffect(() => {
     try {
@@ -1575,7 +1575,7 @@ export default function Home() {
       id="top"
       className={`relative min-h-dvh w-full max-w-[100svw] overflow-x-clip ${
         isAppMode
-          ? "tankaj-app-shell app-shell pb-[calc(7.2rem+env(safe-area-inset-bottom))]"
+          ? "tankaj-app-shell app-shell pb-[calc(8.8rem+env(safe-area-inset-bottom))]"
           : "pb-[calc(7rem+env(safe-area-inset-bottom))] md:pb-0"
       } ${
         theme === "light"
@@ -2534,8 +2534,8 @@ export default function Home() {
           }
 
           .app-shell {
-            padding-top: 12px;
-            padding-bottom: max(env(safe-area-inset-bottom), 16px);
+            padding-top: max(calc(env(safe-area-inset-top) + 14px), 56px);
+            padding-bottom: max(env(safe-area-inset-bottom), 18px);
           }
         `}
       </style>
