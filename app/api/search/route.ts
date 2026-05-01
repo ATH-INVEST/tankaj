@@ -226,10 +226,10 @@ type AnyResult = RoutedResult & {
   recommendation_reason: string | null;
 };
 
-const INITIAL_PER_BUCKET = 5;
+const INITIAL_PER_BUCKET = 10;
 const COUNTRY_COVERAGE_LIMIT = 1;
 const BRAND_COVERAGE_LIMIT = 1;
-const INITIAL_CANDIDATE_LIMIT = 16;
+const INITIAL_CANDIDATE_LIMIT = 32;
 const MORE_LIMIT = 5;
 const ROUTING_CONCURRENCY = 8;
 const CONSUMPTION_DEFAULT = 7;
@@ -615,6 +615,38 @@ function normalizeAustriaBrand(name?: string | null): string | null {
   return null;
 }
 
+function isGenericStationName(name?: string | null) {
+  const value = String(name || "")
+    .trim()
+    .toUpperCase();
+
+  return (
+    !value ||
+    value === "BENCINSKI SERVIS" ||
+    value === "TANKSTELLE" ||
+    value === "GAS STATION"
+  );
+}
+
+function buildStationDisplayName(row: {
+  name?: string | null;
+  brand?: string | null;
+  address?: string | null;
+  city?: string | null;
+}) {
+  if (!isGenericStationName(row.name)) return String(row.name).trim();
+
+  const brand = normalizeBrand(row.brand);
+  const address = String(row.address || "").trim();
+  const city = String(row.city || "").trim();
+
+  if (brand && address) return `${brand} - ${address}`;
+  if (brand && city) return `${brand} - ${city}`;
+  if (address) return address;
+
+  return "Bencinski servis";
+}
+
 function getAustriaPrice(
   station: AustriaStation,
   fuel: AustriaFuelType,
@@ -915,7 +947,12 @@ async function fetchAustriaRows(
 
       return {
         location_id: `AT_${station.id}`,
-        name: station.name,
+        name: buildStationDisplayName({
+          name: station.name,
+          brand: normalizeAustriaBrand(station.name),
+          address: station.location?.address ?? null,
+          city: station.location?.city ?? null,
+        }),
         brand: normalizeAustriaBrand(station.name),
         address: station.location?.address ?? null,
         city: station.location?.city ?? null,
@@ -1175,7 +1212,12 @@ async function fetchAustriaDbRows(
           loc.source === "e-control.at" && loc.source_id
             ? `AT_${loc.source_id}`
             : String(loc.id),
-        name: loc.name || "Bencinski servis",
+        name: buildStationDisplayName({
+          name: loc.name,
+          brand: loc.brand,
+          address: loc.address,
+          city: loc.city,
+        }),
         brand: loc.brand || null,
         address: loc.address || null,
         city: loc.city || null,
@@ -1232,7 +1274,12 @@ async function fetchAustriaOsmRows(
 
       return {
         location_id: String(row.id),
-        name: row.name || "Bencinski servis",
+        name: buildStationDisplayName({
+          name: row.name,
+          brand: row.brand,
+          address: row.address,
+          city: row.city,
+        }),
         brand: row.brand || null,
         address: row.address || null,
         city: row.city || null,
