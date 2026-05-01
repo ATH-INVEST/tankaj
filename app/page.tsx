@@ -366,7 +366,7 @@ function hasUsablePrice(item?: Pick<Result, "price"> | null) {
 }
 
 function formatUnitPrice(
-  item: Pick<Result, "price" | "price_unit" | "fuel_type">
+  item: Pick<Result, "price" | "price_unit" | "fuel_type">,
 ) {
   if (!hasUsablePrice(item)) return "Cena ni na voljo";
   return `${Number(item.price).toFixed(isEv(item) ? 2 : 3)} ${unitLabel(item)}`;
@@ -665,11 +665,11 @@ function brandValueMatches(item: Result, selectedBrand: string) {
 
   return Boolean(
     brand === selected ||
-      inferred === selected ||
-      brand.includes(selected) ||
-      selected.includes(brand) ||
-      name.includes(selected) ||
-      address.includes(selected)
+    inferred === selected ||
+    brand.includes(selected) ||
+    selected.includes(brand) ||
+    name.includes(selected) ||
+    address.includes(selected),
   );
 }
 
@@ -689,7 +689,7 @@ function scoreItem(
   item: Result,
   includeFuel: boolean,
   includePath: boolean,
-  includeTime: boolean
+  includeTime: boolean,
 ) {
   if (includeFuel && !hasCost(item.fuel_cost)) return 999999;
   if (includePath && !hasCost(item.travel_fuel_cost)) return 999999;
@@ -707,7 +707,7 @@ function sortClientResults(
   sortBy: SortBy,
   includeFuel: boolean,
   includePath: boolean,
-  includeTime: boolean
+  includeTime: boolean,
 ) {
   return [...rows].sort((a, b) => {
     const aScore = scoreItem(a, includeFuel, includePath, includeTime);
@@ -762,7 +762,7 @@ function buildCrossBorderInsight(
   best: Result | null,
   includeFuel: boolean,
   includePath: boolean,
-  includeTime: boolean
+  includeTime: boolean,
 ) {
   if (!best || !best.country_code || isEv(best)) return null;
 
@@ -770,7 +770,7 @@ function buildCrossBorderInsight(
     results.find((r) => !r.is_cross_border)?.country_code || "SI";
   const homeOptions = results.filter((r) => r.country_code === homeCountry);
   const crossBorderOptions = results.filter(
-    (r) => r.country_code && r.country_code !== homeCountry
+    (r) => r.country_code && r.country_code !== homeCountry,
   );
 
   if (!homeOptions.length || !crossBorderOptions.length) return null;
@@ -778,12 +778,12 @@ function buildCrossBorderInsight(
   const bestHome = [...homeOptions].sort(
     (a, b) =>
       scoreItem(a, includeFuel, includePath, includeTime) -
-      scoreItem(b, includeFuel, includePath, includeTime)
+      scoreItem(b, includeFuel, includePath, includeTime),
   )[0];
   const bestCross = [...crossBorderOptions].sort(
     (a, b) =>
       scoreItem(a, includeFuel, includePath, includeTime) -
-      scoreItem(b, includeFuel, includePath, includeTime)
+      scoreItem(b, includeFuel, includePath, includeTime),
   )[0];
   if (!bestHome || !bestCross) return null;
 
@@ -791,7 +791,7 @@ function buildCrossBorderInsight(
     (
       scoreItem(bestHome, includeFuel, includePath, includeTime) -
       scoreItem(bestCross, includeFuel, includePath, includeTime)
-    ).toFixed(2)
+    ).toFixed(2),
   );
 
   return {
@@ -832,7 +832,7 @@ export default function Home() {
   const [includePath, setIncludePath] = useState(true);
   const [includeTime, setIncludeTime] = useState(true);
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(
-    null
+    null,
   );
   const [results, setResults] = useState<Result[]>([]);
   const resultsRef = useRef<Result[]>([]);
@@ -852,7 +852,7 @@ export default function Home() {
   >([]);
   const [manualLocationLoading, setManualLocationLoading] = useState(false);
   const [manualLocationError, setManualLocationError] = useState<string | null>(
-    null
+    null,
   );
 
   const activeRequestId = useRef(0);
@@ -1015,7 +1015,7 @@ export default function Home() {
     return [
       ["ALL", mode === "ev" ? "Vsi ponudniki" : "Vse znamke"],
       ...Array.from(available.entries()).sort((a, b) =>
-        a[1].localeCompare(b[1])
+        a[1].localeCompare(b[1]),
       ),
     ];
   }, [results, mode]);
@@ -1047,7 +1047,7 @@ export default function Home() {
       sortBy,
       includeFuel,
       includePath,
-      includeTime
+      includeTime,
     );
   }, [filteredResults, sortBy, includeFuel, includePath, includeTime]);
 
@@ -1084,7 +1084,7 @@ export default function Home() {
       nearest,
       includeFuel,
       includePath,
-      includeTime
+      includeTime,
     );
     const bestScore = scoreItem(best, includeFuel, includePath, includeTime);
     return Number((nearestScore - bestScore).toFixed(2));
@@ -1096,7 +1096,7 @@ export default function Home() {
       best,
       includeFuel,
       includePath,
-      includeTime
+      includeTime,
     );
   }, [filteredResults, best, includeFuel, includePath, includeTime]);
 
@@ -1104,7 +1104,7 @@ export default function Home() {
     if (!best?.captured_at) return null;
     const diffMin = Math.max(
       0,
-      Math.round((Date.now() - new Date(best.captured_at).getTime()) / 60000)
+      Math.round((Date.now() - new Date(best.captured_at).getTime()) / 60000),
     );
     if (diffMin < 1) return "pravkar";
     if (diffMin < 60) return `pred ${diffMin} min`;
@@ -1115,7 +1115,7 @@ export default function Home() {
     (
       point: { lat: number; lng: number },
       batch: "initial" | "more",
-      offset?: number
+      offset?: number,
     ) => {
       const params = new URLSearchParams({
         lat: String(point.lat),
@@ -1156,7 +1156,7 @@ export default function Home() {
       evConsumptionKwh100,
       useEvSubscriptionPrices,
       fuelType,
-    ]
+    ],
   );
 
   const applySearchResponse = useCallback((json: any, append = false) => {
@@ -1243,39 +1243,81 @@ export default function Home() {
       amount,
       brand,
       applySearchResponse,
-    ]
+    ],
   );
 
-  const searchManualLocation = useCallback(async (query: string) => {
-    const q = query.trim();
-    setManualLocationQuery(query);
-    setManualLocationError(null);
+  const geocodeAbortRef = useRef<AbortController | null>(null);
+  const geocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestGeocodeQueryRef = useRef("");
 
-    if (q.length < 2) {
-      setManualLocationResults([]);
-      return;
-    }
+  const searchManualLocation = useCallback(
+    (query: string, immediate = false) => {
+      const q = query.trim();
 
-    setManualLocationLoading(true);
+      setManualLocationQuery(query);
+      setManualLocationError(null);
 
-    try {
-      const res = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`);
-      const json = await res.json();
+      latestGeocodeQueryRef.current = q;
 
-      if (!res.ok || !json.success) {
-        throw new Error(json.error || "Lokacije ni mogoče poiskati.");
+      if (geocodeTimerRef.current) {
+        clearTimeout(geocodeTimerRef.current);
+        geocodeTimerRef.current = null;
       }
 
-      setManualLocationResults((json.results || []) as GeocodeResult[]);
-    } catch (error) {
-      setManualLocationResults([]);
-      setManualLocationError(
-        error instanceof Error ? error.message : "Lokacije ni mogoče poiskati."
+      if (geocodeAbortRef.current) {
+        geocodeAbortRef.current.abort();
+        geocodeAbortRef.current = null;
+      }
+
+      if (q.length < 3) {
+        setManualLocationResults([]);
+        setManualLocationLoading(false);
+        return;
+      }
+
+      setManualLocationLoading(true);
+
+      geocodeTimerRef.current = setTimeout(
+        async () => {
+          const controller = new AbortController();
+          geocodeAbortRef.current = controller;
+
+          try {
+            const res = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`, {
+              signal: controller.signal,
+            });
+
+            const json = await res.json();
+
+            if (latestGeocodeQueryRef.current !== q) return;
+
+            if (!json.success) {
+              setManualLocationResults([]);
+              setManualLocationError(null);
+              return;
+            }
+
+            setManualLocationResults((json.results || []) as GeocodeResult[]);
+          } catch (error) {
+            if (error instanceof Error && error.name === "AbortError") return;
+            if (latestGeocodeQueryRef.current !== q) return;
+
+            setManualLocationResults([]);
+            setManualLocationError("Lokacije trenutno ni mogoče poiskati.");
+          } finally {
+            if (
+              !controller.signal.aborted &&
+              latestGeocodeQueryRef.current === q
+            ) {
+              setManualLocationLoading(false);
+            }
+          }
+        },
+        immediate ? 0 : 650,
       );
-    } finally {
-      setManualLocationLoading(false);
-    }
-  }, []);
+    },
+    [],
+  );
 
   const selectManualLocation = useCallback(
     (item: GeocodeResult) => {
@@ -1294,7 +1336,7 @@ export default function Home() {
       });
       runSearch(nextCoords);
     },
-    [runSearch]
+    [runSearch],
   );
 
   const requestLocationAndSearch = useCallback(() => {
@@ -1330,7 +1372,7 @@ export default function Home() {
         setShowManualLocation(true);
         setStatus("error");
       },
-      { enableHighAccuracy: false, timeout: 7000, maximumAge: 300000 }
+      { enableHighAccuracy: false, timeout: 7000, maximumAge: 300000 },
     );
   }, [coords, runSearch]);
 
@@ -1460,10 +1502,10 @@ export default function Home() {
     const text = isEv(best)
       ? "Tankaj.si mi je našel najbolj smiselno EV polnilnico glede na ceno, pot, čas in moč polnilnice."
       : savingVsNearest > 0.2
-      ? `Tankaj.si mi je našel boljšo izbiro za tankanje. Prihranek: približno ${savingVsNearest.toFixed(
-          2
-        )} €.`
-      : "Tankaj.si mi je našel najbolj smiselno črpalko glede na ceno, razdaljo in strošek poti.";
+        ? `Tankaj.si mi je našel boljšo izbiro za tankanje. Prihranek: približno ${savingVsNearest.toFixed(
+            2,
+          )} €.`
+        : "Tankaj.si mi je našel najbolj smiselno črpalko glede na ceno, razdaljo in strošek poti.";
 
     if (navigator.share) {
       await navigator.share({
@@ -1543,7 +1585,8 @@ export default function Home() {
           }
 
           html.light #top > .pointer-events-none.fixed {
-            background: radial-gradient(
+            background:
+              radial-gradient(
                 circle at 12% 0%,
                 rgba(185, 251, 106, 0.24),
                 transparent 28%
@@ -1676,8 +1719,15 @@ export default function Home() {
 
           /* 2026 iOS polish pass */
           #top {
-            font-family: Inter, ui-sans-serif, system-ui, -apple-system,
-              BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI",
+            font-family:
+              Inter,
+              ui-sans-serif,
+              system-ui,
+              -apple-system,
+              BlinkMacSystemFont,
+              "SF Pro Display",
+              "SF Pro Text",
+              "Segoe UI",
               sans-serif;
           }
 
@@ -1697,7 +1747,8 @@ export default function Home() {
           }
 
           html.light #top > .pointer-events-none.fixed {
-            background: radial-gradient(
+            background:
+              radial-gradient(
                 circle at 13% 2%,
                 rgba(185, 251, 106, 0.22),
                 transparent 31%
@@ -1720,7 +1771,8 @@ export default function Home() {
           html.light #app-footer {
             background: rgba(255, 255, 255, 0.92) !important;
             border: 1px solid rgba(12, 26, 18, 0.075) !important;
-            box-shadow: 0 26px 70px rgba(24, 35, 28, 0.105),
+            box-shadow:
+              0 26px 70px rgba(24, 35, 28, 0.105),
               0 1px 0 rgba(255, 255, 255, 0.78) inset !important;
             backdrop-filter: blur(26px) saturate(165%);
           }
@@ -1742,7 +1794,8 @@ export default function Home() {
             background: #ffffff !important;
             border: 1px solid rgba(7, 26, 18, 0.1) !important;
             color: #071a12 !important;
-            box-shadow: 0 1px 0 rgba(255, 255, 255, 0.95) inset,
+            box-shadow:
+              0 1px 0 rgba(255, 255, 255, 0.95) inset,
               0 10px 24px rgba(32, 45, 37, 0.035) !important;
           }
 
@@ -1754,7 +1807,8 @@ export default function Home() {
           html.light #top input:focus,
           html.light #top select:focus {
             border-color: rgba(137, 230, 52, 0.92) !important;
-            box-shadow: 0 0 0 4px rgba(185, 251, 106, 0.26),
+            box-shadow:
+              0 0 0 4px rgba(185, 251, 106, 0.26),
               0 12px 28px rgba(69, 122, 37, 0.08) !important;
           }
 
@@ -1872,7 +1926,8 @@ export default function Home() {
           }
 
           html.light #top > .pointer-events-none.fixed {
-            background: radial-gradient(
+            background:
+              radial-gradient(
                 circle at 17% 0%,
                 rgba(185, 251, 106, 0.18),
                 transparent 30%
@@ -1903,7 +1958,8 @@ export default function Home() {
           html.light #app-footer {
             background: var(--tankaj-card-strong) !important;
             border-color: var(--tankaj-border) !important;
-            box-shadow: var(--tankaj-shadow-soft),
+            box-shadow:
+              var(--tankaj-shadow-soft),
               0 1px 0 rgba(255, 255, 255, 0.9) inset !important;
           }
 
@@ -1939,14 +1995,16 @@ export default function Home() {
             ) !important;
             border-color: rgba(7, 26, 18, 0.095) !important;
             color: #071a12 !important;
-            box-shadow: 0 1px 0 rgba(255, 255, 255, 0.95) inset,
+            box-shadow:
+              0 1px 0 rgba(255, 255, 255, 0.95) inset,
               0 10px 24px rgba(21, 35, 28, 0.038) !important;
           }
 
           html.light #top input:focus,
           html.light #top select:focus {
             border-color: rgba(143, 232, 56, 0.9) !important;
-            box-shadow: 0 0 0 4px rgba(185, 251, 106, 0.24),
+            box-shadow:
+              0 0 0 4px rgba(185, 251, 106, 0.24),
               0 14px 32px rgba(78, 139, 37, 0.09) !important;
           }
 
@@ -2050,7 +2108,8 @@ export default function Home() {
             ) !important;
             border: 1px solid rgba(144, 222, 74, 0.34) !important;
             color: #071a12 !important;
-            box-shadow: 0 14px 34px rgba(24, 35, 28, 0.075),
+            box-shadow:
+              0 14px 34px rgba(24, 35, 28, 0.075),
               0 1px 0 rgba(255, 255, 255, 0.95) inset !important;
           }
 
@@ -2062,7 +2121,8 @@ export default function Home() {
             ) !important;
             border-color: rgba(144, 222, 74, 0.58) !important;
             transform: translateY(-1px);
-            box-shadow: 0 18px 42px rgba(24, 35, 28, 0.105),
+            box-shadow:
+              0 18px 42px rgba(24, 35, 28, 0.105),
               0 1px 0 rgba(255, 255, 255, 0.98) inset !important;
           }
 
@@ -2139,7 +2199,8 @@ export default function Home() {
             ) !important;
             border: 1px solid rgba(144, 222, 74, 0.56) !important;
             color: #071a12 !important;
-            box-shadow: 0 14px 34px rgba(24, 35, 28, 0.075),
+            box-shadow:
+              0 14px 34px rgba(24, 35, 28, 0.075),
               0 1px 0 rgba(255, 255, 255, 0.95) inset !important;
           }
 
@@ -2191,13 +2252,15 @@ export default function Home() {
           }
 
           #top .winner-card {
-            box-shadow: 0 0 0 1px rgba(185, 251, 106, 0.28),
+            box-shadow:
+              0 0 0 1px rgba(185, 251, 106, 0.28),
               0 22px 70px rgba(185, 251, 106, 0.12),
               0 24px 70px rgba(0, 0, 0, 0.22) !important;
           }
 
           html.light #top .winner-card {
-            box-shadow: 0 0 0 1px rgba(139, 222, 74, 0.32),
+            box-shadow:
+              0 0 0 1px rgba(139, 222, 74, 0.32),
               0 24px 70px rgba(112, 176, 38, 0.14),
               0 24px 70px rgba(24, 35, 28, 0.08) !important;
           }
@@ -2222,26 +2285,30 @@ export default function Home() {
             border-radius: inherit;
             pointer-events: none;
             border: 2px solid rgba(185, 251, 106, 0.65);
-            box-shadow: 0 0 0 1px rgba(185, 251, 106, 0.25),
+            box-shadow:
+              0 0 0 1px rgba(185, 251, 106, 0.25),
               0 0 20px rgba(185, 251, 106, 0.12);
           }
 
           @keyframes winnerPulse {
             0% {
               border-color: rgba(185, 251, 106, 0.95);
-              box-shadow: 0 18px 60px rgba(0, 0, 0, 0.24),
+              box-shadow:
+                0 18px 60px rgba(0, 0, 0, 0.24),
                 inset 0 0 0 1px rgba(185, 251, 106, 0.46),
                 0 0 0 rgba(185, 251, 106, 0);
             }
             42% {
               border-color: rgba(185, 251, 106, 0.95);
-              box-shadow: 0 18px 60px rgba(0, 0, 0, 0.24),
+              box-shadow:
+                0 18px 60px rgba(0, 0, 0, 0.24),
                 inset 0 0 0 1px rgba(185, 251, 106, 0.5),
                 0 0 42px rgba(185, 251, 106, 0.2);
             }
             100% {
               border-color: rgba(185, 251, 106, 0.7);
-              box-shadow: 0 18px 60px rgba(0, 0, 0, 0.24),
+              box-shadow:
+                0 18px 60px rgba(0, 0, 0, 0.24),
                 inset 0 0 0 1px rgba(185, 251, 106, 0.32);
             }
           }
@@ -2262,7 +2329,8 @@ export default function Home() {
 
           html.light #top .winner-card-pulse::after {
             border-color: rgba(106, 169, 31, 0.55);
-            box-shadow: 0 0 0 1px rgba(106, 169, 31, 0.18),
+            box-shadow:
+              0 0 0 1px rgba(106, 169, 31, 0.18),
               0 0 34px rgba(106, 169, 31, 0.16);
           }
 
@@ -2277,14 +2345,16 @@ export default function Home() {
             0%,
             100% {
               border-color: rgba(185, 251, 106, 0.65);
-              box-shadow: 0 18px 60px rgba(0, 0, 0, 0.24),
+              box-shadow:
+                0 18px 60px rgba(0, 0, 0, 0.24),
                 inset 0 0 0 1px rgba(185, 251, 106, 0.28),
                 0 0 0 rgba(185, 251, 106, 0);
             }
 
             50% {
               border-color: rgba(185, 251, 106, 0.9);
-              box-shadow: 0 18px 60px rgba(0, 0, 0, 0.24),
+              box-shadow:
+                0 18px 60px rgba(0, 0, 0, 0.24),
                 inset 0 0 0 1px rgba(185, 251, 106, 0.4),
                 0 0 36px rgba(185, 251, 106, 0.18);
             }
@@ -2306,14 +2376,16 @@ export default function Home() {
           html.dark #top .winner-card {
             border-color: rgba(185, 251, 106, 0.45);
             background: rgba(7, 26, 18, 0.65);
-            box-shadow: 0 18px 60px rgba(0, 0, 0, 0.24),
+            box-shadow:
+              0 18px 60px rgba(0, 0, 0, 0.24),
               inset 0 0 0 1px rgba(185, 251, 106, 0.25);
           }
 
           html.light #top .winner-card {
             border-color: rgba(185, 251, 106, 0.6);
             background: #ffffff;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08),
+            box-shadow:
+              0 10px 30px rgba(0, 0, 0, 0.08),
               0 0 0 1px rgba(185, 251, 106, 0.15);
           }
         `}
@@ -2544,7 +2616,7 @@ function HeroSearch({
                   if (manualLocationResults[0]) {
                     selectManualLocation(manualLocationResults[0]);
                   } else {
-                    searchManualLocation(manualLocationQuery);
+                    searchManualLocation(manualLocationQuery, true);
                   }
                 }}
                 className="rounded-2xl bg-[#b9fb6a] px-4 py-3 text-sm font-black text-[#071a12]"
@@ -2577,7 +2649,7 @@ function HeroSearch({
                     >
                       {item.label}
                     </button>
-                  )
+                  ),
                 )}
               </div>
             )}
@@ -2605,7 +2677,7 @@ function HeroSearch({
                   ...(country === "DE" || country === "ALL"
                     ? ([["PETROL_E10", tr(lang, "petrolE10")]] as [
                         string,
-                        string
+                        string,
                       ][])
                     : []),
                   ["DIESEL", tr(lang, "diesel")],
@@ -2757,12 +2829,12 @@ function HeroSearch({
             {status === "location"
               ? tr(lang, "getLocation")
               : status === "routing"
-              ? mode === "ev"
-                ? tr(lang, "calcEv")
-                : tr(lang, "calcRoutes")
-              : mode === "ev"
-              ? tr(lang, "findEv")
-              : tr(lang, "refreshBest")}
+                ? mode === "ev"
+                  ? tr(lang, "calcEv")
+                  : tr(lang, "calcRoutes")
+                : mode === "ev"
+                  ? tr(lang, "findEv")
+                  : tr(lang, "refreshBest")}
           </button>
         </div>
       </div>
@@ -2853,8 +2925,8 @@ function ResultPanel({
             hasAnyResults
               ? "Za izbrani filter trenutno ni izračunane možnosti. Prikaži vse ponudnike ali naloži dodatne možnosti."
               : mode === "ev"
-              ? "V izbranem radiju trenutno ni primernih EV polnilnic. Povečaj radij ali znižaj minimalno moč."
-              : "V izbranem radiju trenutno ni izračunanih možnosti. Povečaj radij ali poskusi znova."
+                ? "V izbranem radiju trenutno ni primernih EV polnilnic. Povečaj radij ali znižaj minimalno moč."
+                : "V izbranem radiju trenutno ni izračunanih možnosti. Povečaj radij ali poskusi znova."
           }
         />
       )}
@@ -2925,9 +2997,9 @@ function ResultPanel({
 
               {showOthers && otherResults.length > 0 && (
                 <div className="mt-3 flex w-full min-w-0 flex-col gap-3 overflow-hidden">
-                  {otherResults.map((item: Result) => (
+                  {otherResults.map((item: Result, index: number) => (
                     <CompactResult
-                      key={item.location_id}
+                      key={`${item.location_id}-${item.fuel_type}-${index}`}
                       item={item}
                       mapsUrl={mapsUrl}
                       includeFuel={includeFuel}
@@ -2953,16 +3025,16 @@ function ResultPanel({
                 {loadingMore
                   ? tr(lang, "loadingMore")
                   : !showOthers
-                  ? mode === "ev"
-                    ? tr(lang, "showMoreEv")
-                    : tr(lang, "showOtherOptions")
-                  : hasMore
-                  ? mode === "ev"
-                    ? tr(lang, "loadMoreEv")
-                    : tr(lang, "loadMore5")
-                  : mode === "ev"
-                  ? tr(lang, "allEvShown")
-                  : tr(lang, "allShown")}
+                    ? mode === "ev"
+                      ? tr(lang, "showMoreEv")
+                      : tr(lang, "showOtherOptions")
+                    : hasMore
+                      ? mode === "ev"
+                        ? tr(lang, "loadMoreEv")
+                        : tr(lang, "loadMore5")
+                      : mode === "ev"
+                        ? tr(lang, "allEvShown")
+                        : tr(lang, "allShown")}
               </button>
             </>
           )}
@@ -3075,7 +3147,7 @@ function BestCard({
           <div className="flex min-w-0 items-center gap-3">
             <div
               className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-xs font-black sm:h-12 sm:w-12 ${brandColor(
-                item.brand
+                item.brand,
               )}`}
             >
               {brandShort(item.brand)}
@@ -3231,7 +3303,7 @@ function CompactResult({
         <div className="contents">
           <div
             className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-xs font-black sm:h-14 sm:w-14 ${brandColor(
-              item.brand
+              item.brand,
             )}`}
           >
             {brandShort(item.brand)}
@@ -3550,7 +3622,7 @@ function CrossBorderCard({
           <div className="mt-1 text-sm leading-relaxed text-white/52">
             {insight.isWorthIt
               ? `Najboljša možnost čez mejo prihrani približno ${insight.saving.toFixed(
-                  2
+                  2,
                 )} € proti najboljši domači možnosti.`
               : "Cene čez mejo niso dovolj boljše, da bi pokrile dodatno pot in čas."}
           </div>
@@ -3706,7 +3778,7 @@ function BrandMultiSelect({
 
   function commit(next: string[]) {
     const clean = Array.from(
-      new Set(next.map(normalize).filter(Boolean))
+      new Set(next.map(normalize).filter(Boolean)),
     ).filter((item) => item !== "ALL");
 
     onChange(clean.length ? clean.join(",") : "ALL");
