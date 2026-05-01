@@ -860,8 +860,23 @@ export default function Home() {
   const activeRequestId = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const didAutoLocate = useRef(false);
+  const [isAppMode, setIsAppMode] = useState(false);
 
   const loading = status === "location" || status === "routing";
+
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const appParam = params.get("app") === "1";
+      const standalone = window.matchMedia?.("(display-mode: standalone)")?.matches;
+      const isCapacitor = Boolean((window as any).Capacitor);
+      const nextValue = Boolean(appParam || standalone || isCapacitor);
+      setIsAppMode(nextValue);
+      document.documentElement.classList.toggle("tankaj-native-app", nextValue);
+    } catch {
+      setIsAppMode(false);
+    }
+  }, []);
 
   useEffect(() => {
     try {
@@ -1532,7 +1547,11 @@ export default function Home() {
   return (
     <main
       id="top"
-      className={`relative min-h-dvh w-full max-w-[100svw] overflow-x-clip pb-[calc(7rem+env(safe-area-inset-bottom))] md:pb-0 ${
+      className={`relative min-h-dvh w-full max-w-[100svw] overflow-x-clip ${
+        isAppMode
+? "tankaj-app-shell app-shell pb-[calc(6.8rem+env(safe-area-inset-bottom))]"
+          : "pb-[calc(7rem+env(safe-area-inset-bottom))] md:pb-0"
+      } ${
         theme === "light"
           ? "bg-[#f6f4ec] text-[#071a12]"
           : "bg-[#06140f] text-white"
@@ -2411,6 +2430,90 @@ export default function Home() {
               0 10px 30px rgba(0, 0, 0, 0.08),
               0 0 0 1px rgba(185, 251, 106, 0.15);
           }
+
+          .tankaj-app-shell {
+            min-height: 100dvh;
+            background: #06140f;
+          }
+
+          .tankaj-app-shell .app-search-card,
+          .tankaj-app-shell .app-result-card {
+            box-shadow:
+              0 24px 80px rgba(0, 0, 0, 0.26),
+              inset 0 1px 0 rgba(255, 255, 255, 0.07) !important;
+          }
+
+          .tankaj-app-shell input,
+          .tankaj-app-shell select {
+            min-height: 54px;
+            font-size: 16px;
+          }
+
+          .tankaj-app-shell .winner-card {
+            border-radius: 28px !important;
+          }
+
+          .tankaj-app-shell #result {
+            scroll-margin-top: calc(env(safe-area-inset-top) + 12px);
+          }
+
+          @media (max-width: 767px) {
+            html.tankaj-native-app body {
+              background: #06140f;
+              overscroll-behavior-y: none;
+            }
+
+            .tankaj-app-shell > section {
+              gap: 14px;
+            }
+
+            .tankaj-app-shell .app-search-card > div:first-child {
+              position: sticky;
+              top: env(safe-area-inset-top);
+              z-index: 30;
+              margin: -16px -16px 0;
+              padding: 12px 16px;
+              background: rgba(6, 20, 15, 0.72);
+              backdrop-filter: blur(20px) saturate(165%);
+              border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+            }
+
+            .tankaj-app-shell .app-search-card > div:first-child .text-3xl {
+              font-size: 1.55rem;
+              line-height: 1;
+            }
+
+            .tankaj-app-shell .app-search-card [class*="mt-4 w-full"] {
+              border-radius: 28px !important;
+              background: rgba(255, 255, 255, 0.065) !important;
+            }
+
+            .tankaj-app-shell .app-result-card {
+              margin-bottom: 8px;
+            }
+
+            .tankaj-app-shell #how-it-works,
+            .tankaj-app-shell #app-footer {
+              display: none !important;
+            }
+          }
+
+          html.light .tankaj-app-shell .app-search-card,
+          html.light .tankaj-app-shell .app-result-card {
+            background: rgba(255, 255, 255, 0.9) !important;
+          }
+          html,
+body {
+  overscroll-behavior: none;
+}
+
+.app-shell {
+  padding-top: max(env(safe-area-inset-top), 24px);
+  padding-bottom: max(env(safe-area-inset-bottom), 16px);
+}
+
+
+
         `}
       </style>
       <div
@@ -2421,9 +2524,10 @@ export default function Home() {
         }`}
       />
 
-      <section className="relative mx-auto flex min-h-dvh w-full max-w-[1280px] min-w-0 flex-col px-3 py-3 sm:px-6 lg:px-8 lg:py-7">
-        <div className="grid w-full min-w-0 flex-1 gap-4 lg:grid-cols-2 xl:gap-6">
+      <section className={`relative mx-auto flex min-h-dvh w-full min-w-0 flex-col ${isAppMode ? "max-w-[520px] px-3.5 py-2" : "max-w-[1280px] px-3 py-3 sm:px-6 lg:px-8 lg:py-7"}`}>
+        <div className={`grid w-full min-w-0 flex-1 gap-4 ${isAppMode ? "grid-cols-1" : "lg:grid-cols-2 xl:gap-6"}`}>
           <HeroSearch
+            isAppMode={isAppMode}
             lang={lang}
             setLang={setLang}
             theme={theme}
@@ -2471,6 +2575,7 @@ export default function Home() {
           />
 
           <ResultPanel
+            isAppMode={isAppMode}
             lang={lang}
             mode={mode}
             best={best}
@@ -2500,14 +2605,15 @@ export default function Home() {
           />
         </div>
 
-        <HowItWorks lang={lang} />
-        <AppFooter lang={lang} />
+        {!isAppMode && <HowItWorks lang={lang} />}
+        {!isAppMode && <AppFooter lang={lang} />}
       </section>
     </main>
   );
 }
 
 function HeroSearch({
+  isAppMode,
   lang,
   setLang,
   theme,
@@ -2556,7 +2662,7 @@ function HeroSearch({
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   return (
-    <div className="w-full min-w-0 max-w-full overflow-visible rounded-[30px] border border-white/10 bg-white/[0.055] p-4 shadow-[0_25px_80px_rgba(0,0,0,.25)] backdrop-blur-2xl sm:p-6 lg:min-h-[720px] lg:p-8">
+    <div className={`w-full min-w-0 max-w-full overflow-visible border border-white/10 bg-white/[0.055] shadow-[0_25px_80px_rgba(0,0,0,.25)] backdrop-blur-2xl ${isAppMode ? "app-search-card rounded-[32px] p-4" : "rounded-[30px] p-4 sm:p-6 lg:min-h-[720px] lg:p-8"}`}> 
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0 text-3xl font-black italic tracking-tight sm:text-4xl">
           Tankaj<span className="text-[#b9fb6a]">.si</span>
@@ -2588,21 +2694,44 @@ function HeroSearch({
         </div>
       </div>
 
-      <div className="mt-5 flex items-center gap-2 text-sm text-white/58">
-        <span className="text-[#b9fb6a]">⌖</span>
-        <span>Slovenija, Hrvaška, Avstrija, Italija, Nemčija</span>
-      </div>
+      {!isAppMode ? (
+        <>
+          <div className="mt-5 flex items-center gap-2 text-sm text-white/58">
+            <span className="text-[#b9fb6a]">⌖</span>
+            <span>Slovenija, Hrvaška, Avstrija, Italija, Nemčija</span>
+          </div>
 
-      <h1 className="mt-6 max-w-xl text-[42px] font-black leading-[.94] tracking-[-.055em] min-[380px]:text-[50px] sm:text-[64px] lg:text-[72px] xl:text-[78px]">
-        <span className="block">{tr(lang, "heroTitleTop")}</span>
-        <span className="block hero-title-accent">
-          {tr(lang, "heroTitleBottom")}
-        </span>
-      </h1>
+          <h1 className="mt-6 max-w-xl text-[42px] font-black leading-[.94] tracking-[-.055em] min-[380px]:text-[50px] sm:text-[64px] lg:text-[72px] xl:text-[78px]">
+            <span className="block">{tr(lang, "heroTitleTop")}</span>
+            <span className="block hero-title-accent">
+              {tr(lang, "heroTitleBottom")}
+            </span>
+          </h1>
 
-      <p className="mt-5 max-w-lg text-base leading-relaxed text-white/60 sm:text-lg">
-        {tr(lang, "heroText")}
-      </p>
+          <p className="mt-5 max-w-lg text-base leading-relaxed text-white/60 sm:text-lg">
+            {tr(lang, "heroText")}
+          </p>
+        </>
+      ) : (
+        <div className="mt-4 rounded-[28px] border border-[#b9fb6a]/20 bg-[radial-gradient(circle_at_top_right,rgba(185,251,106,.20),transparent_38%),linear-gradient(180deg,rgba(7,26,18,.74),rgba(7,26,18,.54))] p-4 shadow-[0_18px_55px_rgba(0,0,0,.22)]">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-[11px] font-black uppercase tracking-[.24em] text-[#b9fb6a]">
+                {mode === "ev" ? "EV iskanje" : "Pametno tankanje"}
+              </div>
+              <h1 className="mt-2 text-[34px] font-black leading-[.92] tracking-[-.055em] text-white">
+                {mode === "ev" ? "Kje polniti?" : "Kje tankati?"}
+              </h1>
+            </div>
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[22px] bg-[#b9fb6a] text-2xl shadow-[0_14px_34px_rgba(185,251,106,.25)]">
+              {mode === "ev" ? "⚡" : "⛽"}
+            </div>
+          </div>
+          <p className="mt-3 max-w-sm text-sm font-medium leading-relaxed text-white/60">
+            Cena + razdalja + čas. Ena najboljša izbira za tvojo lokacijo.
+          </p>
+        </div>
+      )}
 
       <div className="mt-4">
         <button
@@ -2898,6 +3027,7 @@ function HeroSearch({
 }
 
 function ResultPanel({
+  isAppMode,
   lang,
   mode,
   best,
@@ -2941,7 +3071,7 @@ function ResultPanel({
   return (
     <div
       id="result"
-      className="w-full min-w-0 max-w-full overflow-hidden rounded-[30px] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(185,251,106,.18),transparent_32%),linear-gradient(180deg,rgba(15,48,34,.86),rgba(5,20,14,.88))] p-4 shadow-[0_25px_80px_rgba(0,0,0,.25)] backdrop-blur-2xl sm:p-6 lg:min-h-[720px] lg:p-8"
+      className={`w-full min-w-0 max-w-full overflow-hidden border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(185,251,106,.18),transparent_32%),linear-gradient(180deg,rgba(15,48,34,.86),rgba(5,20,14,.88))] p-4 shadow-[0_25px_80px_rgba(0,0,0,.25)] backdrop-blur-2xl ${isAppMode ? "app-result-card rounded-[32px]" : "rounded-[30px] sm:p-6 lg:min-h-[720px] lg:p-8"}`}
     >
       {loading && <LoadingState lang={lang} status={status} />}
 
