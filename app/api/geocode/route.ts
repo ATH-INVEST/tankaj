@@ -56,10 +56,7 @@ export async function GET(req: Request) {
   q = cleanQuery(q);
 
   if (q.length < 2) {
-    return NextResponse.json(
-      { success: false, results: [] },
-      { status: 200 },
-    );
+    return NextResponse.json({ success: false, results: [] }, { status: 200 });
   }
 
   // 1️⃣ PRIMARY (z country filterjem)
@@ -75,9 +72,7 @@ export async function GET(req: Request) {
 
   // 2️⃣ FALLBACK (brez country filterja — pomembno za AT/DE robne primere)
   if (!data || data.length === 0) {
-    const urlFallback = new URL(
-      "https://nominatim.openstreetmap.org/search",
-    );
+    const urlFallback = new URL("https://nominatim.openstreetmap.org/search");
 
     urlFallback.searchParams.set("q", q);
     urlFallback.searchParams.set("format", "jsonv2");

@@ -93,7 +93,8 @@ const THEME_STORAGE_KEY = "tankaj_theme";
 const TEXT: Record<Lang, Record<string, string>> = {
   sl: {
     countries: "Slovenija, Hrvaška, Avstrija, Italija, Nemčija",
-    heroTitle: "Ne tankaj več na pamet.",
+    heroTitleTop: "Ne tankaj",
+    heroTitleBottom: "na pamet.",
     heroText:
       "Odpri app, dovoli lokacijo in Tankaj.si sam izračuna najboljšo izbiro. Zdaj podpira goriva in EV polnilnice — z realno potjo, časom in oceno skupnega stroška.",
     hideManual: "Skrij ročni vnos",
@@ -211,7 +212,8 @@ const TEXT: Record<Lang, Record<string, string>> = {
   },
   en: {
     countries: "Slovenia, Croatia, Austria, Italy, Germany",
-    heroTitle: "Don’t fuel blindly.",
+    heroTitleTop: "Don’t fuel",
+    heroTitleBottom: "blindly.",
     heroText:
       "Open the app, allow location and Tankaj.si calculates the best option for you. It now supports fuel and EV chargers — with real routes, time and estimated total cost.",
     hideManual: "Hide manual entry",
@@ -1554,7 +1556,16 @@ export default function Home() {
 
           body {
             -webkit-font-smoothing: antialiased;
-            text-rendering: geometricPrecision;
+            -moz-osx-font-smoothing: grayscale;
+            text-rendering: optimizeLegibility;
+          }
+
+          .hero-title-accent {
+            color: #b9fb6a;
+          }
+
+          html.light .hero-title-accent {
+            color: #4e8d18 !important;
           }
 
           #top,
@@ -1907,7 +1918,7 @@ export default function Home() {
 
           @media (max-width: 640px) {
             #top h1 {
-              letter-spacing: -0.062em;
+              letter-spacing: -0.062em !important;
             }
           }
           /* Final production UI pass — LIGHT MODE ONLY. Dark mode intentionally stays identical to previous approved version. */
@@ -1963,9 +1974,21 @@ export default function Home() {
               0 1px 0 rgba(255, 255, 255, 0.9) inset !important;
           }
 
-          html.light #top h1 {
-            letter-spacing: -0.07em !important;
+          html.light #top h1,
+          html.dark #top h1 {
+            font-family:
+              Inter,
+              ui-sans-serif,
+              system-ui,
+              -apple-system,
+              BlinkMacSystemFont,
+              "SF Pro Display",
+              "Segoe UI",
+              sans-serif !important;
+            font-weight: 900 !important;
+            letter-spacing: -0.062em !important;
             line-height: 0.94 !important;
+            text-rendering: optimizeLegibility;
           }
           html.light #top h2,
           html.light #top h3 {
@@ -2571,7 +2594,10 @@ function HeroSearch({
       </div>
 
       <h1 className="mt-6 max-w-xl text-[42px] font-black leading-[.94] tracking-[-.055em] min-[380px]:text-[50px] sm:text-[64px] lg:text-[72px] xl:text-[78px]">
-        {tr(lang, "heroTitle")}
+        <span className="block">{tr(lang, "heroTitleTop")}</span>
+        <span className="block hero-title-accent">
+          {tr(lang, "heroTitleBottom")}
+        </span>
       </h1>
 
       <p className="mt-5 max-w-lg text-base leading-relaxed text-white/60 sm:text-lg">

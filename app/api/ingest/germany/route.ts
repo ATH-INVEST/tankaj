@@ -171,7 +171,7 @@ async function fetchTankerkoenigStations(params: {
     throw new Error(
       `Tankerkönig API error: status=${res.status}, message=${
         json.message ?? json.data ?? "unknown"
-      }`
+      }`,
     );
   }
 
@@ -200,7 +200,7 @@ async function touchCache(cacheKey: string, payload: Record<string, unknown>) {
       payload,
       updated_at: new Date().toISOString(),
     },
-    { onConflict: "cache_key" }
+    { onConflict: "cache_key" },
   );
 }
 
@@ -211,7 +211,7 @@ export async function GET(req: NextRequest) {
     if (authFailed(req)) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
-        { status: 401 }
+        { status: 401 },
       );
     }
 
@@ -222,7 +222,7 @@ export async function GET(req: NextRequest) {
           error:
             "Missing env vars. Required: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY",
         },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -245,7 +245,7 @@ export async function GET(req: NextRequest) {
     const offset = Math.max(Number(searchParams.get("offset") ?? 0), 0);
     const limit = Math.min(
       Math.max(Number(searchParams.get("limit") ?? 3), 1),
-      10
+      10,
     );
     const ttlMinutes = Math.max(Number(searchParams.get("ttl") ?? 360), 30);
     const delayMs = Math.max(Number(searchParams.get("delayMs") ?? 0), 0);
@@ -299,16 +299,16 @@ export async function GET(req: NextRequest) {
               (station) =>
                 station.id &&
                 Number.isFinite(station.lat) &&
-                Number.isFinite(station.lng)
+                Number.isFinite(station.lng),
             )
             .map((station) => ({
               type: "fuel_station",
               name: station.name || station.brand || "Tankstelle",
               brand: getCanonicalBrand(
-                `${station.brand || ""} ${station.name || ""}`
+                `${station.brand || ""} ${station.name || ""}`,
               ),
               operator: getCanonicalBrand(
-                `${station.brand || ""} ${station.name || ""}`
+                `${station.brand || ""} ${station.name || ""}`,
               ),
               address: buildAddress(station),
               city: station.place || null,
@@ -363,7 +363,7 @@ export async function GET(req: NextRequest) {
             (locationRowsFromDb || []).map((row) => [
               String(row.source_id),
               row.id,
-            ])
+            ]),
           );
 
           const priceRows = stations
@@ -452,7 +452,7 @@ export async function GET(req: NextRequest) {
         finishedAt: new Date().toISOString(),
         error: error instanceof Error ? error.message : String(error),
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
